@@ -66,8 +66,9 @@ class offset_env():
         yp[:,0] = y[:,0] + self.dt
         
         yp[:,1] = y[:,1]*(self.T - y[:,0] - self.dt)/(self.T-y[:,0]) \
-                            + self.sigma * ((self.dt * (self.T - y[:,0] - self.dt) / (self.T - y[:,0])) ** (1/2)) * torch.randn(mini_batch_size) \
-                            - self.eta * self.xi * G
+            + self.dt/(self.T-y[:,0]) * self.pen \
+                + self.sigma * ((self.dt * (self.T - y[:,0] - self.dt) / (self.T - y[:,0])) ** (1/2)) * torch.randn(mini_batch_size) \
+                    - self.eta * self.xi * G
                     
         # inventory evolution
         nu = (1-G) * a[:,0]
