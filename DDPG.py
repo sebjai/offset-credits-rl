@@ -154,16 +154,18 @@ class DDPG():
 
     def norm(self, k: torch.tensor, typ :str):
         
-        norm = torch.zeros(k.shape)
+        # norm = torch.zeros(k.shape)
         
-        if typ == 'state':
-            norm[...,0] = self.env.T
-            norm[...,1] = self.env.S0
-            norm[...,2] = self.env.X_max
+        # if typ == 'state':
+        #     norm[...,0] = self.env.T
+        #     norm[...,1] = self.env.S0
+        #     norm[...,2] = self.env.X_max
             
-        if typ == 'policy':
-            norm[...,0] = self.env.nu_max
-            norm[...,1] = 1.0
+        # if typ == 'policy':
+        #     norm[...,0] = self.env.nu_max
+        #     norm[...,1] = 1.0
+        
+        norm = torch.ones(k.shape)
             
         return norm
 
@@ -191,10 +193,8 @@ class DDPG():
             
             # used for randomization
             nu_rand = torch.exp (epsilon*torch.randn((mini_batch_size,)))
-            p_rand = 1.0/(1.0 + torch.exp(-epsilon*torch.randn((mini_batch_size,))))
-            # H = torch.bernoulli(
-            #     epsilon * torch.ones(mini_batch_size).to(torch.float32))
-            H = 1.0* ( torch.rand(mini_batch_size) < epsilon)
+            p_rand = torch.exp(-epsilon*torch.abs(torch.randn((mini_batch_size,))) )
+            H = 1.0* ( torch.rand(mini_batch_size) < 0.5)
             
             # concatenate states
             Y = self.__stack_state__(t, S, X)
@@ -290,7 +290,6 @@ class DDPG():
             self.epsilon.append(epsilon)
             self.count += 1
 
-             
             self.Update_Q(n_iter=n_iter_Q, 
                           mini_batch_size=mini_batch_size, 
                           epsilon=epsilon)

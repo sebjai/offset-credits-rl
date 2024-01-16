@@ -65,11 +65,9 @@ class offset_env():
         # time evolution
         yp[:,0] = y[:,0] + self.dt
         
-        # asset price evolution
-        yp[:,1] = y[:,1] \
-            + (self.pen-y[:,1])/(self.T-y[:,0]) * self.dt \
-                + self.sigma * np.sqrt(self.dt) * torch.randn(mini_batch_size) \
-                    - self.eta * self.xi * G
+        yp[:,1] = y[:,1]*(self.T - y[:,0] - self.dt)/(self.T-y[:,0]) \
+                            + self.sigma * ((self.dt * (self.T - y[:,0] - self.dt) / (self.T - y[:,0])) ** (1/2)) * torch.randn(mini_batch_size) \
+                            - self.eta * self.xi * G
                     
         # inventory evolution
         nu = (1-G) * a[:,0]
