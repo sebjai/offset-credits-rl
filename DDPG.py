@@ -154,18 +154,18 @@ class DDPG():
 
     def norm(self, k: torch.tensor, typ :str):
         
-        # norm = torch.zeros(k.shape)
+        norm = torch.zeros(k.shape)
         
-        # if typ == 'state':
-        #     norm[...,0] = self.env.T
-        #     norm[...,1] = self.env.S0
-        #     norm[...,2] = self.env.X_max
+        if typ == 'state':
+            norm[...,0] = self.env.T
+            norm[...,1] = self.env.S0
+            norm[...,2] = self.env.X_max
             
-        # if typ == 'policy':
-        #     norm[...,0] = self.env.nu_max
-        #     norm[...,1] = 1.0
+        if typ == 'policy':
+            norm[...,0] = self.env.nu_max
+            norm[...,1] = 1.0
         
-        norm = torch.ones(k.shape)
+        # norm = torch.ones(k.shape)
             
         return norm
 
@@ -188,8 +188,6 @@ class DDPG():
         for i in range(n_iter): 
             
             t, S, X = self.__grab_mini_batch__(mini_batch_size)
-            
-            self.Q_main['optimizer'].zero_grad()
             
             # used for randomization
             nu_rand = torch.exp (epsilon*torch.randn((mini_batch_size,)))
@@ -217,7 +215,7 @@ class DDPG():
             # step in the environment
             Y_p, r = self.env.step(Y, a)
             
-            ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6)
+            ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
 
             # compute the Q(S', a*)
             # optimal policy at t+1
@@ -229,7 +227,9 @@ class DDPG():
                                                 self.normalize(Y_p, 'state'), \
                                                 self.normalize(a_p, 'policy')), \
                                                axis=1))
-                  
+
+            self.Q_main['optimizer'].zero_grad()
+            
             loss = torch.mean((target.detach() - Q)**2)
             
             # compute the gradients

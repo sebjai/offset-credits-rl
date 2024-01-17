@@ -48,7 +48,8 @@ class offset_env():
         X0 = torch.rand(mini_batch_size) * self.X_max
         # randomized time 
         t0 = torch.tensor(np.random.choice(self.t[:-1], size=mini_batch_size, replace=True)).to(torch.float32)
-        idx = np.random.choice(np.linspace(0, mini_batch_size-1), size=int(0.05 * mini_batch_size), replace=False)
+        # idx = np.random.choice(np.linspace(0, mini_batch_size-1), size=int(0.05 * mini_batch_size), replace=False)
+        idx = (torch.rand(mini_batch_size) < 0.05)
         t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
@@ -65,10 +66,11 @@ class offset_env():
         # time evolution
         yp[:,0] = y[:,0] + self.dt
         
-        yp[:,1] = y[:,1]*(self.T - y[:,0] - self.dt)/(self.T-y[:,0]) \
+        yp[:,1] = y[:,1]*(self.T - yp[:,0])/(self.T-y[:,0]) \
             + self.dt/(self.T-y[:,0]) * self.pen \
-                + self.sigma * ((self.dt * (self.T - y[:,0] - self.dt) / (self.T - y[:,0])) ** (1/2)) * torch.randn(mini_batch_size) \
-                    - self.eta * self.xi * G
+                + self.sigma * ((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])) ** (1/2)) * torch.randn(mini_batch_size) \
+                    - self.eta * self.xi * G        
+        
                     
         # inventory evolution
         nu = (1-G) * a[:,0]
