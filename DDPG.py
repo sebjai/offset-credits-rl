@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 import torch.nn as nn
-torch.autograd.set_detect_anomaly(True)
+#torch.autograd.set_detect_anomaly(True)
 
 from tqdm import tqdm
 
@@ -26,7 +26,7 @@ from datetime import datetime
 class ANN(nn.Module):
 
     def __init__(self, n_in, n_out, nNodes, nLayers, 
-                 activation='silu', out_activation=None):
+                 activation='silu', out_activation=None, env = None):
         super(ANN, self).__init__()
         
         self.prop_in_to_h = nn.Linear(n_in, nNodes)
@@ -44,8 +44,44 @@ class ANN(nn.Module):
             self.g= torch.sigmoid()
         
         self.out_activation = out_activation
+        
+        self.env = env
+        
+    def norm(self, k: torch.tensor, typ :str):
+         
+         norm = torch.zeros(k.shape)
+         
+         if typ == 'state':
+             norm[...,0] = self.env.T
+             norm[...,1] = self.env.S0
+             norm[...,2] = self.env.X_max
+             
+         if typ == 'policy':
+             norm[...,0] = self.env.nu_max
+             norm[...,1] = 1.0
+             
+         return norm
 
-    def forward(self, x):
+    def normalize(self, k: torch.tensor, typ: str):
+         '''
+         possible types: "state" and "policy"
+         '''
+         norm = self.norm(k, typ)
+             
+         return k / norm
+
+    def de_normalize(self, k: torch.tensor, typ: str):
+         
+         norm = self.norm(k, typ)
+             
+         return k * norm
+
+    def forward(self, Y, a = None):
+        
+        if a is not None:
+            x = torch.cat(( self.normalize(Y, 'state'), self.normalize(a, 'policy')), axis=1)
+        else:
+            x = self.normalize(Y, 'state')
 
         # input into  hidden layer
         h = self.g(self.prop_in_to_h(x))
@@ -90,47 +126,47 @@ class DDPG():
         self.epsilon = []
         
         self.Q_loss = []
-        self.pi_loss = []
+        self.pi_main_loss = []
         
         
     def __initialize_NNs__(self):
         
         # policy approximation
         #
-        # features = t, S, X
+        # input = t, S, X
         # out = nu, p
         #
-        self.pi = {'net': ANN(n_in=3, 
+        self.pi_main = {'net': ANN(n_in=3, 
                               n_out=2, 
                               nNodes=self.n_nodes, 
                               nLayers=self.n_layers,
-                              out_activation=[lambda y : y, 
-                                              torch.sigmoid])}
+                              out_activation=[lambda y : self.env.nu_max*torch.tanh(y), 
+                                              torch.sigmoid], env = self.env)}
         
-        self.pi['optimizer'], self.pi['scheduler'] = self.__get_optim_sched__(self.pi)        
+        self.pi_main['optimizer'], self.pi_main['scheduler'] = self.__get_optim_sched__(self.pi_main)        
         
         # Q - function approximation
         #
-        # features = t, S, X, nu, p
+        # input = t, S, X, nu, p
         # out = Q
         self.Q_main = {'net' : ANN(n_in=5, 
                                   n_out=1,
                                   nNodes=self.n_nodes, 
-                                  nLayers=self.n_layers) }
+                                  nLayers=self.n_layers, env = self.env) }
 
         self.Q_main['optimizer'], self.Q_main['scheduler'] = self.__get_optim_sched__(self.Q_main)
         
         self.Q_target = copy.deepcopy(self.Q_main)
+        self.pi_target = copy.deepcopy(self.pi_main)
         
         
     def __get_optim_sched__(self, net):
         
-        optimizer = optim.AdamW(net['net'].parameters(),
-                                lr=self.lr)
-                    
+        optimizer = optim.AdamW(net['net'].parameters(),lr=self.lr)
+                  
         scheduler = optim.lr_scheduler.StepLR(optimizer,
                                               step_size=self.sched_step_size,
-                                              gamma=0.99)
+                                              gamma=0.9)
     
         return optimizer, scheduler
         
@@ -152,36 +188,7 @@ class DDPG():
             if torch.amin(x) < 0 or torch.amax(x) > 1:
                 print(torch.amin(x), torch.amax(x))
 
-    def norm(self, k: torch.tensor, typ :str):
-        
-        norm = torch.zeros(k.shape)
-        
-        if typ == 'state':
-            norm[...,0] = self.env.T
-            norm[...,1] = self.env.S0
-            norm[...,2] = self.env.X_max
-            
-        if typ == 'policy':
-            norm[...,0] = self.env.nu_max
-            norm[...,1] = 1.0
-        
-        # norm = torch.ones(k.shape)
-            
-        return norm
-
-    def normalize(self, k: torch.tensor, typ: str):
-        '''
-        possible types: "state" and "policy"
-        '''
-        norm = self.norm(k, typ)
-            
-        return k / norm
-
-    def de_normalize(self, k: torch.tensor, typ: str):
-        
-        norm = self.norm(k, typ)
-            
-        return k * norm
+   
 
     def Update_Q(self, n_iter = 10, mini_batch_size=256, epsilon=0.02):
         
@@ -189,9 +196,12 @@ class DDPG():
             
             t, S, X = self.__grab_mini_batch__(mini_batch_size)
             
+            self.Q_main['optimizer'].zero_grad()
+            
+            
             # used for randomization
             nu_rand = torch.exp (epsilon*torch.randn((mini_batch_size,)))
-            p_rand = torch.exp(-epsilon*torch.abs(torch.randn((mini_batch_size,))) )
+            p_rand = torch.exp(-epsilon*torch.abs(torch.randn((mini_batch_size,))))
             H = 1.0* ( torch.rand(mini_batch_size) < 0.5)
             
             # concatenate states
@@ -199,37 +209,37 @@ class DDPG():
             
             # normalize : Y (tSX)
             # get pi (policy)
-            a = self.pi['net'](self.normalize(Y, 'state')).detach()
+            a = self.pi_main['net'](Y).detach()
 
             # randomize policy and prob for exploration
             a[:,0] = a[:,0] * nu_rand
+            
             a[:,1] = a[:,1] * p_rand * H + \
                 (1 - (1 - a[:,1]) * p_rand) * (1-H)
+            
+            
+            
+            # a[:,1] += torch.randn((mini_batch_size,)) * epsilon / 5
+            # a[:,1] = torch.clip(a[:,1], min = 0, max  = 1)
 
             # get Q
-            Q = self.Q_main['net']( torch.cat(( \
-                                               self.normalize(Y, 'state'), \
-                                               self.normalize(a, 'policy')), \
-                                              axis=1) )
+            Q = self.Q_main['net'](Y, a)
 
             # step in the environment
+           # pdb.set_trace()
+            
             Y_p, r = self.env.step(Y, a)
             
             ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
 
             # compute the Q(S', a*)
             # optimal policy at t+1
-            a_p = self.pi['net'](self.normalize(Y_p, 'state')).detach()
+            a_p = self.pi_target['net'](Y_p).detach()
             
             # compute the target for Q
             target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * \
-                self.Q_target['net'](torch.cat(( \
-                                                self.normalize(Y_p, 'state'), \
-                                                self.normalize(a_p, 'policy')), \
-                                               axis=1))
-
-            self.Q_main['optimizer'].zero_grad()
-            
+                self.Q_target['net'](Y_p, a_p)
+                  
             loss = torch.mean((target.detach() - Q)**2)
             
             # compute the gradients
@@ -243,31 +253,31 @@ class DDPG():
             
         self.Q_target = copy.deepcopy(self.Q_main)
         
+        
     def Update_pi(self, n_iter = 10, mini_batch_size=256, epsilon=0.02):
 
         for i in range(n_iter):
             t, S, X = self.__grab_mini_batch__(mini_batch_size)
             
-            self.pi['optimizer'].zero_grad()
+            self.pi_main['optimizer'].zero_grad()
             
             # concatenate states 
             Y = self.__stack_state__(t, S, X)
 
-            a = self.pi['net'](self.normalize(Y, 'state'))
+            a = self.pi_main['net'](Y)
             
-            Q = self.Q_main['net']( torch.cat(( \
-                                               self.normalize(Y, 'state'),
-                                               self.normalize(a, 'policy')),
-                                              axis=1) )
+            Q = self.Q_main['net'](Y, a)
             
             loss = -torch.mean(Q)
                 
             loss.backward()
             
-            self.pi['optimizer'].step()
-            self.pi['scheduler'].step()
+            self.pi_main['optimizer'].step()
+            self.pi_main['scheduler'].step()
             
-            self.pi_loss.append(loss.item())
+            self.pi_main_loss.append(loss.item())
+            
+        self.pi_target = copy.deepcopy(self.pi_main)
             
     def train(self, n_iter=1_000, 
               n_iter_Q=10, 
@@ -286,14 +296,15 @@ class DDPG():
             
         for i in tqdm(range(n_iter)):
             
-            epsilon = np.maximum(C/(D+self.count), 0.02)
+            epsilon = np.maximum(C/(D+self.count), 0.05)
             self.epsilon.append(epsilon)
             self.count += 1
 
+             
             self.Update_Q(n_iter=n_iter_Q, 
                           mini_batch_size=mini_batch_size, 
                           epsilon=epsilon)
-            # pdb.set_trace()
+            
             self.Update_pi(n_iter=n_iter_pi, 
                            mini_batch_size=mini_batch_size, 
                            epsilon=epsilon)
@@ -341,7 +352,7 @@ class DDPG():
         plot(self.Q_loss, r'$Q$', show_band=False)
         
         plt.subplot(1,2,2)
-        plot(self.pi_loss, r'$\pi$')
+        plot(self.pi_main_loss, r'$\pi$')
         
         plt.tight_layout()
         plt.show()
@@ -355,8 +366,7 @@ class DDPG():
         X = torch.zeros((nsims, N)).float()
         a = torch.zeros((nsims, 2, N-1)).float()
         r = torch.zeros((nsims, N-1)).float()
-
-
+        
         S[:,0] = self.env.S0
         X[:,0] = 0
         
@@ -368,7 +378,7 @@ class DDPG():
 
             # normalize : Y (tSX)
             # get policy
-            a[:,:,k] = self.pi['net'](self.normalize(Y, 'state'))
+            a[:,:,k] = self.pi_main['net'](Y)
 
             # step in environment
             Y_p, r[:,k] = self.env.step(Y, a[:,:,k], flag = 0)
@@ -387,6 +397,10 @@ class DDPG():
 
         plt.figure(figsize=(8,5))
         n_paths = 3
+        
+        def CVaR(x, alpha):
+            qtl = np.quantile(x, alpha)
+            return np.mean(x[x<=qtl])
         
         def plot(t, x, plt_i, title ):
             
@@ -412,7 +426,10 @@ class DDPG():
         # plot(t, np.cumsum(r, axis=1), 3, r"$r_t$")
 
         plt.subplot(2, 3, 6)
-        plt.hist(np.sum(r,axis=1), bins=51)
+        plt.hist(np.sum(r,axis=1), bins=np.linspace(-13,-12,51))
+
+        plt.axvline( CVaR( np.sum(r,axis=1), 0.05), ls = '--', color = 'r')
+        plt.axvline( -12.5, ls = '--', color = 'k')
         #plt.set_title('PnL')
 
 
@@ -434,38 +451,60 @@ class DDPG():
         NS = 51
         S = torch.linspace(0, 1.5 * self.env.pen, NS)
         
-        NX = 51
+        NX = 75
         X = torch.linspace(-0.1, self.env.X_max, NX)
         
         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
+        
 
         def plot(k, lvls, title):
             
+            
+            t_steps = np.linspace(0, self.env.T, 9)
+            t_steps[-1] = self.env.T - self.env.dt
+            
+            n_cols = 3
+            if np.mod(len(t_steps), n_cols) == 0:
+                n_rows = int(len(t_steps)/n_cols)
+            else:
+                n_rows = int(np.floor(len(t_steps)/n_cols)) + 1
+            
             # plot 
-            fig, axs = plt.subplots(2, 2)
+            fig, axs = plt.subplots(n_rows, n_cols, figsize = (6,5))
             plt.suptitle(title, y =1.01, fontsize = 'xx-large')
             
-            t_steps = [0, self.env.T/4, self.env.T/2, (self.env.T - self.env.dt)]
+            
             
             for idx, ax in enumerate(axs.flat):
-                t = torch.ones(NS,NX) * t_steps[idx]
-                Y = self.__stack_state__(t, Sm, Xm)
-                
-                # normalize : Y (tSX)
-                a = self.pi['net'](self.normalize(Y, 'state').to(torch.float32)).detach().squeeze()
-                cs = ax.contourf(Sm.numpy(), Xm.numpy(), a[:,:,k], 
-                                  levels=lvls,
-                                  cmap='RdBu')
-                # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
-    
-                ax.axvline(self.env.S0, linestyle='--', color='k')
-                ax.axhline(self.env.R, linestyle='--', color='k')
-                ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
+                if idx < len(t_steps):
+                    
+                    
+                    t = torch.ones(NS,NX) * t_steps[idx]
+                    Y = self.__stack_state__(t, Sm, Xm).to(torch.float32)
+                    
+                    #pdb.set_trace()
+                    
+                    
+                    # normalize : Y (tSX)
+                    a = self.pi_main['net'](Y).detach().squeeze()
+                    
+                    cs = ax.pcolormesh(Sm.numpy(), Xm.numpy(), a[:,:,k], 
+                                      vmin = min(lvls), vmax = max(lvls),
+                                      cmap='RdBu')
+                    
+                    # cs = ax.contourf(Sm.numpy(), Xm.numpy(), a[:,:,k], 
+                    #                   levels=lvls,
+                    #                   cmap='RdBu')
+                    # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
+        
+                    ax.axvline(self.env.S0, linestyle='--', color='k')
+                    ax.axhline(self.env.R, linestyle='--', color='k')
+                    ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
             
             fig.text(0.5, -0.01, 'OC Price', ha='center',fontsize = 'x-large')
             fig.text(-0.01, 0.5, 'Inventory', va='center', rotation='vertical',fontsize = 'x-large')
             # fig.subplots_adjust(right=0.9)   
-    
+            
             cbar_ax = fig.add_axes([1.04, 0.15, 0.05, 0.7])
             cbar = fig.colorbar(cs, cax=cbar_ax)
             # cbar.set_ticks(np.linspace(-self.env.nu_max/2, self.env.nu_max/2, 11))
