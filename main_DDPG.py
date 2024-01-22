@@ -7,19 +7,44 @@ import matplotlib.pyplot as plt
 plt.style.use('paper.mplstyle')
 
 import DDPG, offset_env
+import dill
 
-# =============================================================================
-# import os
-# os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-# =============================================================================
 #%%
-env = offset_env.offset_env(T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
-                 c=0.25, S0=2.5, R=5, pen=2.5, N = 101)
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                            kappa = 0.03, 
+                            eta = 0.05, xi=0.1, c=0.25,  
+                            R=5, pen=2.5, 
+                            N = 101,
+                            penalty='diff')
 
 ddpg = DDPG.DDPG(env,
-            gamma = 0.999, 
-            lr=5e-4,
-            name="test" )
+            gamma = 1, 
+            lr = 0.001,
+            tau = 0.001,
+            sched_step_size=100,
+            name="test", n_nodes=64, n_layers=5 )
  
 #%%    
-ddpg.train(n_iter = 10000, n_plot=1000, n_iter_Q=5, n_iter_pi=1)
+# try some transfer learning -- learn with various values of N
+# starting from the optimal from the previous value of N
+for N in [10, 25, 50, 100]:
+
+    scale = 1
+    
+    env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                                kappa = 0.03, 
+                                eta = 0.05, xi=0.1*scale, c=0.25*scale,  
+                                R=5, pen=2.5, 
+                                N = N,
+                                penalty='diff')
+    
+    ddpg.reset(env)    
+    
+    ddpg.train(n_iter = 5_000, 
+               n_plot= 500, 
+               batch_size=128, 
+               n_iter_Q=5, n_iter_pi=5)
+    
+    # dill.dump(ddpg, open('trained_' + str(N) + '.pkl', "wb"))
+    
+    

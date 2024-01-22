@@ -13,9 +13,10 @@ import matplotlib.pyplot as plt
 import torch
 import torch.optim as optim
 import torch.nn as nn
-torch.autograd.set_detect_anomaly(True)
+# torch.autograd.set_detect_anomaly(True)
 
 from tqdm import tqdm
+from ann import ann
 
 import copy
 
@@ -23,52 +24,39 @@ import pdb
 
 from datetime import datetime
 
-class ANN(nn.Module):
+class pi_ann(nn.Module):
 
-    def __init__(self, n_in, n_out, nNodes, nLayers, 
-                 activation='silu', out_activation=None):
-        super(ANN, self).__init__()
+    def __init__(self, nNodes, nLayers, env=None):
+        super(pi_ann, self).__init__()
         
-        self.prop_in_to_h = nn.Linear(n_in, nNodes)
-
-        self.prop_h_to_h = nn.ModuleList(
-            [nn.Linear(nNodes, nNodes) for i in range(nLayers-1)])
-
-        self.prop_h_to_out = nn.Linear(nNodes, n_out)
+        self.env = env
         
-        if activation == 'silu':
-            self.g = nn.SiLU()
-        elif activation == 'relu':
-            self.g = nn.ReLU()
-        elif activation == 'sigmoid':
-            self.g= torch.sigmoid()
+        self.nu = ann(3, 1, nNodes, nLayers, 
+                      out_activation = [lambda x : self.env.nu_max*torch.tanh(x)],
+                      env=env)
         
-        self.out_activation = out_activation
+        self.prob = ann(3, 1, nNodes, nLayers,
+                        out_activation = [torch.sigmoid],
+                        env=env)
 
-    def forward(self, x):
-
-        # input into  hidden layer
-        h = self.g(self.prop_in_to_h(x))
-
-        for prop in self.prop_h_to_h:
-            h = self.g(prop(h))
-
-        # hidden layer to output layer
-        y = self.prop_h_to_out(h)
-
-        if self.out_activation is not None:
-            for i in range(y.shape[-1]):
-                y[...,i] = self.out_activation[i](y[...,i])
-            
+    def forward(self, Y):
+        
+        if len(Y.shape) == 2:
+            y = torch.zeros(Y.shape[0],2)
+        else:
+            y = torch.zeros(Y.shape[0],Y.shape[1],2)
+        
+        y[...,0] = self.nu(Y).squeeze()
+        y[...,1] = self.prob(Y).squeeze()
+        
         return y
-
-
+    
 class DDPG():
 
     def __init__(self, env: Environment,  
                  gamma=0.9999,  
                  n_nodes=36, n_layers=3, 
-                 lr=1e-3, sched_step_size = 100,
+                 lr=0.001, tau=0.001, sched_step_size = 100,
                  name=""):
 
         self.env = env
@@ -78,6 +66,7 @@ class DDPG():
         self.name =  name
         self.sched_step_size = sched_step_size
         self.lr = lr
+        self.tau = tau
         
         self.__initialize_NNs__()
         
@@ -92,6 +81,20 @@ class DDPG():
         self.Q_loss = []
         self.pi_loss = []
         
+    def reset(self, env):
+        
+        self.env = env
+        self.pi['net'].env = env
+        self.pi['net'].nu.env = env
+        self.pi['net'].prob.env = env
+        self.Q_main['net'].env = env
+        self.Q_target['net'].env = env
+        
+        for g in self.pi['optimizer'].param_groups:
+            g['lr'] = self.lr
+        for g in self.Q_main['optimizer'].param_groups:
+            g['lr'] = self.lr
+        
         
     def __initialize_NNs__(self):
         
@@ -100,12 +103,9 @@ class DDPG():
         # features = t, S, X
         # out = nu, p
         #
-        self.pi = {'net': ANN(n_in=3, 
-                              n_out=2, 
-                              nNodes=self.n_nodes, 
-                              nLayers=self.n_layers,
-                              out_activation=[lambda y : y, 
-                                              torch.sigmoid])}
+        self.pi = {'net': pi_ann(nNodes=self.n_nodes, 
+                                 nLayers=self.n_layers,
+                                 env = self.env)}
         
         self.pi['optimizer'], self.pi['scheduler'] = self.__get_optim_sched__(self.pi)        
         
@@ -113,10 +113,11 @@ class DDPG():
         #
         # features = t, S, X, nu, p
         # out = Q
-        self.Q_main = {'net' : ANN(n_in=5, 
+        self.Q_main = {'net' : ann(n_in=5, 
                                   n_out=1,
                                   nNodes=self.n_nodes, 
-                                  nLayers=self.n_layers) }
+                                  nLayers=self.n_layers,
+                                  env = self.env) }
 
         self.Q_main['optimizer'], self.Q_main['scheduler'] = self.__get_optim_sched__(self.Q_main)
         
@@ -130,9 +131,14 @@ class DDPG():
                     
         scheduler = optim.lr_scheduler.StepLR(optimizer,
                                               step_size=self.sched_step_size,
-                                              gamma=0.99)
+                                              gamma=0.999)
     
         return optimizer, scheduler
+    
+    def soft_update(self, main, target):
+    
+        for param, target_param in zip(main.parameters(), target.parameters()):
+            target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
         
     def __stack_state__(self, t, S, X):
         # normalization happens outside of stack state
@@ -143,8 +149,8 @@ class DDPG():
         return tSX
     
     
-    def __grab_mini_batch__(self, mini_batch_size):
-        t, S, X = self.env.randomize(mini_batch_size)
+    def __grab_mini_batch__(self, batch_size, epsilon):
+        t, S, X = self.env.randomize(batch_size, epsilon)
         return t, S, X
    
     def range_test(self, x, test='prob'):
@@ -152,127 +158,178 @@ class DDPG():
             if torch.amin(x) < 0 or torch.amax(x) > 1:
                 print(torch.amin(x), torch.amax(x))
 
-    def norm(self, k: torch.tensor, typ :str):
+    def Update_Q(self, n_iter = 10, batch_size=256, epsilon=0.02, 
+                 progress_bar=False):
         
-        # norm = torch.zeros(k.shape)
-        
-        # if typ == 'state':
-        #     norm[...,0] = self.env.T
-        #     norm[...,1] = self.env.S0
-        #     norm[...,2] = self.env.X_max
+        rg = range(n_iter) 
+        if progress_bar:
+            rg = tqdm(rg)
             
-        # if typ == 'policy':
-        #     norm[...,0] = self.env.nu_max
-        #     norm[...,1] = 1.0
-        
-        norm = torch.ones(k.shape)
+        for i in rg: 
             
-        return norm
-
-    def normalize(self, k: torch.tensor, typ: str):
-        '''
-        possible types: "state" and "policy"
-        '''
-        norm = self.norm(k, typ)
+            t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
             
-        return k / norm
-
-    def de_normalize(self, k: torch.tensor, typ: str):
-        
-        norm = self.norm(k, typ)
-            
-        return k * norm
-
-    def Update_Q(self, n_iter = 10, mini_batch_size=256, epsilon=0.02):
-        
-        for i in range(n_iter): 
-            
-            t, S, X = self.__grab_mini_batch__(mini_batch_size)
-            
-            self.Q_main['optimizer'].zero_grad()
-            
-            # used for randomization
-            nu_rand = torch.exp (epsilon*torch.randn((mini_batch_size,)))
-            p_rand = torch.exp(-epsilon*torch.abs(torch.randn((mini_batch_size,))) )
-            H = 1.0* ( torch.rand(mini_batch_size) < 0.5)
             
             # concatenate states
             Y = self.__stack_state__(t, S, X)
             
             # normalize : Y (tSX)
             # get pi (policy)
-            a = self.pi['net'](self.normalize(Y, 'state')).detach()
+            a = self.pi['net'](Y).detach()
 
-            # randomize policy and prob for exploration
-            a[:,0] = a[:,0] * nu_rand
-            a[:,1] = a[:,1] * p_rand * H + \
-                (1 - (1 - a[:,1]) * p_rand) * (1-H)
+            # randomize actions
+            a[:,0] += 0.5*self.env.nu_max*epsilon*torch.randn((batch_size,))
+            a[:,0] = torch.clip(a[:,0], min=-self.env.nu_max, max=self.env.nu_max)
+            a[:,1] += epsilon * torch.randn((batch_size,))
+            a[:,1] = torch.clip(a[:,1], min=0, max=1)
 
             # get Q
-            Q = self.Q_main['net']( torch.cat(( \
-                                               self.normalize(Y, 'state'), \
-                                               self.normalize(a, 'policy')), \
-                                              axis=1) )
+            Q = self.Q_main['net'](Y, a )
 
             # step in the environment
             Y_p, r = self.env.step(Y, a)
             
-            ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6)
+            ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
 
             # compute the Q(S', a*)
             # optimal policy at t+1
-            a_p = self.pi['net'](self.normalize(Y_p, 'state')).detach()
+            a_p = self.pi['net'](Y_p).detach()
             
             # compute the target for Q
-            target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * \
-                self.Q_target['net'](torch.cat(( \
-                                                self.normalize(Y_p, 'state'), \
-                                                self.normalize(a_p, 'policy')), \
-                                               axis=1))
-                  
+            Q_p = self.Q_target['net'](Y_p, a_p)
+            target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * Q_p
+
             loss = torch.mean((target.detach() - Q)**2)
             
             # compute the gradients
+            self.Q_main['optimizer'].zero_grad()
+            
             loss.backward()
+            
+            # torch.nn.utils.clip_grad_norm_(self.Q_main['net'].parameters(), 1)
 
             # perform step using those gradients
             self.Q_main['optimizer'].step()                
-            self.Q_main['scheduler'].step() 
+            
             
             self.Q_loss.append(loss.item())
             
-        self.Q_target = copy.deepcopy(self.Q_main)
+            self.soft_update(self.Q_main['net'], self.Q_target['net'])
         
-    def Update_pi(self, n_iter = 10, mini_batch_size=256, epsilon=0.02):
+        self.Q_main['scheduler'].step() 
+        # self.Q_target = copy.deepcopy(self.Q_main)
+        
+    def Update_pi(self, n_iter = 10, batch_size=256, epsilon=0.02):
 
         for i in range(n_iter):
-            t, S, X = self.__grab_mini_batch__(mini_batch_size)
             
-            self.pi['optimizer'].zero_grad()
+            t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
             
             # concatenate states 
             Y = self.__stack_state__(t, S, X)
 
-            a = self.pi['net'](self.normalize(Y, 'state'))
+            a = self.pi['net'](Y)
             
-            Q = self.Q_main['net']( torch.cat(( \
-                                               self.normalize(Y, 'state'),
-                                               self.normalize(a, 'policy')),
-                                              axis=1) )
+            Q = self.Q_main['net'](Y,a )
             
             loss = -torch.mean(Q)
                 
+            self.pi['optimizer'].zero_grad()
+            
             loss.backward()
             
+            # torch.nn.utils.clip_grad_norm_(self.pi['net'].parameters(), 1)
+            
             self.pi['optimizer'].step()
-            self.pi['scheduler'].step()
             
             self.pi_loss.append(loss.item())
+            
+        self.pi['scheduler'].step()
+            
+    def Update_Q_pi(self, n_iter = 10, batch_size=256, epsilon=0.02):
+        
+        for i in range(n_iter): 
+            
+            t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
+            
+            t *= 0
+            S[:] = self.env.S0
+            X[:] = 0
+            
+            # concatenate states
+            Y = self.__stack_state__(t, S, X)
+            
+            for j in range(self.env.N-1):
+            
+                # normalize : Y (tSX)
+                # get pi (policy)
+                a = self.pi['net'](Y)
+                a_cp = a.clone()
+                a = a.detach()
+    
+                # randomize actions
+                a[:,0] += 10*epsilon*torch.randn((batch_size,))
+                a[:,0] = torch.clip(a[:,0], min=-self.env.nu_max, max=self.env.nu_max)
+                
+                a[:,1] += 0.5*epsilon * torch.randn((batch_size,))
+                a[:,1] = torch.clip(a[:,1], min=0, max=1)
+    
+                # get Q
+                Q = self.Q_main['net'](Y, a )
+    
+                # step in the environment
+                Y_p, r = self.env.step(Y, a)
+                
+                ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
+    
+                # compute the Q(S', a*)
+                # optimal policy at t+1
+                a_p = self.pi['net'](Y_p).detach()
+                
+                # compute the target for Q
+                Q_p = self.Q_target['net'](Y_p, a_p)
+                target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * Q_p
+    
+                loss = torch.mean((target.detach() - Q)**2)
+                
+                # compute the gradients
+                self.Q_main['optimizer'].zero_grad()
+                
+                loss.backward()
+                
+                # torch.nn.utils.clip_grad_norm_(self.Q_main['net'].parameters(), 1)
+    
+                # perform step using those gradients
+                self.Q_main['optimizer'].step()                
+                self.Q_main['scheduler'].step() 
+                
+                self.Q_loss.append(loss.item())
+                
+                # update pi 
+                Q = self.Q_main['net'](Y, a_cp )
+                
+                loss = -torch.mean(Q)
+                    
+                self.pi['optimizer'].zero_grad()
+                
+                loss.backward()
+                
+                # torch.nn.utils.clip_grad_norm_(self.pi['net'].parameters(), 1)
+                
+                self.pi['optimizer'].step()
+                self.pi['scheduler'].step()
+                
+                self.pi_loss.append(loss.item())
+                
+                Y = Y_p.detach().clone()
+                
+                self.soft_update(self.Q_main['net'], self.Q_target['net'])   
+            
             
     def train(self, n_iter=1_000, 
               n_iter_Q=10, 
               n_iter_pi=5, 
-              mini_batch_size=256, 
+              batch_size=256, 
               n_plot=100):
         
         self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
@@ -284,28 +341,38 @@ class DDPG():
         if len(self.epsilon)==0:
             self.count=0
             
+        print("burning in the Q function for the initial policy...")
+        self.Update_Q(n_iter=1000, 
+                      batch_size=batch_size, 
+                      epsilon=0.5, progress_bar=True)
+        
+        print("now performing full updates Q > pi...")
+        
         for i in tqdm(range(n_iter)):
             
-            epsilon = np.maximum(C/(D+self.count), 0.02)
+            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.02)
             self.epsilon.append(epsilon)
             self.count += 1
 
             self.Update_Q(n_iter=n_iter_Q, 
-                          mini_batch_size=mini_batch_size, 
+                          batch_size=batch_size, 
                           epsilon=epsilon)
             # pdb.set_trace()
             self.Update_pi(n_iter=n_iter_pi, 
-                           mini_batch_size=mini_batch_size, 
-                           epsilon=epsilon)
+                            batch_size=batch_size, 
+                            epsilon=epsilon)
+            
+            # self.Update_Q_pi(n_iter=1, 
+            #                   batch_size=batch_size, 
+            #                   epsilon=epsilon)
 
             if np.mod(i+1,n_plot) == 0:
                 
                 self.loss_plots()
                 self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
-                # self.plot_policy()
                 self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
-    def moving_average(self, x, n):
+    def mv(self, x, n):
         
         y = np.zeros(len(x))
         y_err = np.zeros(len(x))
@@ -314,20 +381,29 @@ class DDPG():
         
         for i in range(1,len(x)):
             
-            if i < n:
-                y[i] = np.mean(x[:i])
-                y_err[i] = np.std(x[:i])
-            else:
-                y[i] = np.mean(x[i-n:i])
-                y_err[i] = np.std(x[i-n:i])
+            if i < n+1:
                 
-        return y, y_err                
+                mu = np.mean(x[:i])
+                mu2 = np.mean(x[:i]**2)
+                
+                y[i] = mu
+                y_err[i] = np.sqrt(mu2-mu**2)
+                
+            else:
+                
+                mu = mu +(1.0/n) * (x[i-1]-x[i-n])
+                mu2 = mu2 +(1.0/n) * (x[i-1]**2-x[i-n]**2)
+                
+                y[i] = mu
+                y_err[i] = np.sqrt(mu2-mu**2)
+                
+        return y, y_err  
             
     def loss_plots(self):
         
         def plot(x, label, show_band=True):
 
-            mv, mv_err = self.moving_average(x, 100)
+            mv, mv_err = self.mv(np.array(x), 100)
         
             if show_band:
                 plt.fill_between(np.arange(len(mv)), mv-mv_err, mv+mv_err, alpha=0.2)
@@ -363,12 +439,12 @@ class DDPG():
         ones = torch.ones(nsims)
 
         for k in range(N-1):
-            # Y = self.__stack_state__(self.env.dt*t*ones ,S[:,t], X[:,t])
+            
             Y = self.__stack_state__(self.env.t[k]* ones ,S[:,k], X[:,k])
 
             # normalize : Y (tSX)
             # get policy
-            a[:,:,k] = self.pi['net'](self.normalize(Y, 'state'))
+            a[:,:,k] = self.pi['net'](Y)
 
             # step in environment
             Y_p, r[:,k] = self.env.step(Y, a[:,:,k], flag = 0)
@@ -377,12 +453,15 @@ class DDPG():
             S[:, k+1] = Y_p[:,1]
             X[:, k+1] = Y_p[:,2]
             
-        # print(torch.cat( (torch.amin(a[:,0,:], dim = 0).unsqueeze(-1), torch.amax(a[:,0,:].unsqueeze(-1), dim = 0)) , dim=-1))
-        # print(a[:,0,:])
-
         S = S.detach().numpy()
         X  = X.detach().numpy()
+        
         a = a.detach().numpy()
+        
+        a = a.transpose(0,2,1)
+        mask = (a[:,:,1] > 0.5)
+        a[mask,0] = 0
+        
         r = r.detach().numpy()
 
         plt.figure(figsize=(8,5))
@@ -390,8 +469,6 @@ class DDPG():
         
         def plot(t, x, plt_i, title ):
             
-            # print(x.shape)
-            # pdb.set_trace()
             qtl= np.quantile(x, [0.05, 0.5, 0.95], axis=0)
 
             plt.subplot(2, 3, plt_i)
@@ -399,7 +476,6 @@ class DDPG():
             plt.plot(t, qtl[1,:], color='k', linewidth=1)
             plt.plot(t, x[:n_paths, :].T, linewidth=1)
             
-            # plt.xticks([0,0.5,1])
             plt.title(title)
             plt.xlabel(r"$t$")
 
@@ -407,15 +483,25 @@ class DDPG():
         plot(self.env.t, (S), 1, r"$S_t$" )
         plot(self.env.t, X, 2, r"$X_t$")
         plot(self.env.t[:-1], np.cumsum(r, axis=1), 3, r"$r_t$")
-        plot(self.env.t[:-1], a[:,0,:], 4, r"$\nu_t$")
-        plot(self.env.t[:-1], a[:,1,:], 5, r"$p_t$")
-        # plot(t, np.cumsum(r, axis=1), 3, r"$r_t$")
+        plot(self.env.t[:-1], a[:,:,0], 4, r"$\nu_t$")
+        plot(self.env.t[:-1], a[:,:,1], 5, r"$p_t$")
 
         plt.subplot(2, 3, 6)
-        plt.hist(np.sum(r,axis=1), bins=51)
-        #plt.set_title('PnL')
-
-
+        
+        naive_pen = self.env.pen*self.env.R
+        
+        if self.env.penalty =='terminal':
+            PnL = np.sum(r,axis=1)
+        elif self.env.penalty =='diff':
+            PnL = np.sum(r,axis=1) - naive_pen
+            
+        qtl = np.quantile(PnL,[0.005, 0.5, 0.995])
+        
+        plt.hist(PnL, bins=np.linspace(qtl[0], qtl[-1], 101), density=True)
+        plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
+        plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
+        plt.xlim(qtl[0], qtl[-1])
+        
         plt.tight_layout()
         
        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
@@ -423,7 +509,7 @@ class DDPG():
         
         t = 1.0* self.env.t
         
-        return t, S, X, a
+        return t, S, X, a, r
 
     def plot_policy(self, name=""):
         '''
@@ -432,27 +518,38 @@ class DDPG():
         '''
         
         NS = 51
-        S = torch.linspace(0, 1.5 * self.env.pen, NS)
+        S = torch.linspace(self.env.S0-2*self.env.inv_vol,
+                           self.env.S0+3*self.env.inv_vol, NS)
         
         NX = 51
-        X = torch.linspace(-0.1, self.env.X_max, NX)
+        X = torch.linspace(0, self.env.X_max, NX)
         
         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
 
         def plot(k, lvls, title):
             
             # plot 
-            fig, axs = plt.subplots(2, 2)
-            plt.suptitle(title, y =1.01, fontsize = 'xx-large')
+            t_steps = np.linspace(0, self.env.T, 9)
+            t_steps[-1] = (self.env.T - self.env.dt)
             
-            t_steps = [0, self.env.T/4, self.env.T/2, (self.env.T - self.env.dt)]
+            n_cols = 3
+            n_rows = int(np.floor(len(t_steps)/n_cols)+1)
+            
+            if n_rows*n_cols > len(t_steps):
+                n_rows -= 1
+            
+            fig, axs = plt.subplots(n_rows, n_cols, figsize=(6,5))
+            
+            plt.suptitle(title, y =1.01, fontsize = 'xx-large')
             
             for idx, ax in enumerate(axs.flat):
                 t = torch.ones(NS,NX) * t_steps[idx]
                 Y = self.__stack_state__(t, Sm, Xm)
                 
                 # normalize : Y (tSX)
-                a = self.pi['net'](self.normalize(Y, 'state').to(torch.float32)).detach().squeeze()
+                a = self.pi['net'](Y).detach().squeeze().numpy()
+                mask = (a[:,:,1]>0.999)
+                a[mask,0] = np.nan
                 cs = ax.contourf(Sm.numpy(), Xm.numpy(), a[:,:,k], 
                                   levels=lvls,
                                   cmap='RdBu')
@@ -461,6 +558,7 @@ class DDPG():
                 ax.axvline(self.env.S0, linestyle='--', color='k')
                 ax.axhline(self.env.R, linestyle='--', color='k')
                 ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
+                ax.set_facecolor("gray")
             
             fig.text(0.5, -0.01, 'OC Price', ha='center',fontsize = 'x-large')
             fig.text(-0.01, 0.5, 'Inventory', va='center', rotation='vertical',fontsize = 'x-large')
@@ -472,6 +570,7 @@ class DDPG():
             # cbar.set_ticks(np.linspace(-50, 50, 11))
                 
             plt.tight_layout()
+            
             plt.show()
         
         plot(0, 
