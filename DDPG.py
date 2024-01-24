@@ -83,6 +83,7 @@ class DDPG():
         
     def reset(self, env):
         
+        self.epsilon = []
         self.env = env
         self.pi['net'].env = env
         self.pi['net'].nu.env = env
@@ -518,11 +519,11 @@ class DDPG():
         '''
         
         NS = 51
-        S = torch.linspace(self.env.S0-2*self.env.inv_vol,
+        S = torch.linspace(self.env.S0-3*self.env.inv_vol,
                            self.env.S0+3*self.env.inv_vol, NS)
         
         NX = 51
-        X = torch.linspace(0, self.env.X_max, NX)
+        X = torch.linspace(-1, self.env.X_max, NX)
         
         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
 
@@ -557,6 +558,7 @@ class DDPG():
     
                 ax.axvline(self.env.S0, linestyle='--', color='k')
                 ax.axhline(self.env.R, linestyle='--', color='k')
+                ax.axhline(0, linestyle='--', color='k')
                 ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
                 ax.set_facecolor("gray")
             

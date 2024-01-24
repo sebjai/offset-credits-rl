@@ -48,7 +48,10 @@ class offset_env():
     def randomize(self, batch_size=10, epsilon=0):
         # experiment with distributions
         # penalty + N(0,1)
-        S0 = self.S0 + 3*torch.randn(batch_size) * self.inv_vol 
+        # S0 = self.S0 + 3*torch.randn(batch_size) * self.inv_vol 
+        u = torch.rand(batch_size)
+        S0 = (self.S0 - 3*self.inv_vol) * (1-u) \
+            + (self.S0 + 3*self.inv_vol) * u
         # Unifrom(0,x_max)
         X0 = torch.rand(batch_size) * self.X_max
         # randomized time 
@@ -83,20 +86,14 @@ class offset_env():
         
         # Reward
         if self.penalty == 'terminal':
+            
             ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()
             terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
-            # terminal_cost += torch.maximum(yp[:,2]-self.R, torch.tensor(0))**2 * flag
             
             r = -( y[:,1] * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
                           + ind_T * terminal_cost)
-                
-            # r = - y[:,1] * nu *self.dt \
-            #       - (0.5 * self.kappa * nu**2 * self.dt) * flag \
-            #           - self.c * G \
-            #               + ind_T * (yp[:,2]-self.pen) * flag \
-            #                   - ind_T * (1-flag) * terminal_cost
                 
         elif self.penalty == 'diff':
             
