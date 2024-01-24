@@ -14,17 +14,25 @@ import torch
 class offset_env():
 
     def __init__(self, T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
-                     c=0.25, S0=2.5, R=5, pen=2.5, N=51):
+                     c=0.25, S0=2.5, R=5, pen=2.5, N=51,
+                     penalty='terminal'):
         
         self.T=T
+         # trading friction
         self.sigma = sigma
         self.kappa = kappa
+        # impulse to generation 
         self.eta = eta
+        # generation capacity
         self.xi = xi
+        # cost of generation
         self.c = c
         self.S0 = S0
+        # terminal inventory requirement
         self.R = R 
+        # terminal penalty
         self.pen = pen
+        # inventory and trade rate limits
         self.X_max = 1.5 * R
         self.nu_max = 100.0
         
@@ -33,52 +41,65 @@ class offset_env():
         self.dt = self.t[1]-self.t[0]  # time steps
         self.inv_vol = self.sigma * np.sqrt(0.5*self.T )
         
-    def randomize(self, mini_batch_size=10):
+        self.penalty = penalty
+        self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
+                                            - torch.maximum(self.R - x0, torch.tensor(0)) )        
+        
+    def randomize(self, batch_size=10, epsilon=0):
         # experiment with distributions
         # penalty + N(0,1)
-        
-        S0 = self.S0 + torch.randn(mini_batch_size) * self.inv_vol 
+        # S0 = self.S0 + 3*torch.randn(batch_size) * self.inv_vol 
+        u = torch.rand(batch_size)
+        S0 = (self.S0 - 3*self.inv_vol) * (1-u) \
+            + (self.S0 + 3*self.inv_vol) * u
         # Unifrom(0,x_max)
-        X0 = torch.rand(mini_batch_size) * self.X_max
+        X0 = torch.rand(batch_size) * self.X_max
         # randomized time 
-        t0 = torch.tensor(np.random.choice(self.t[:-1], size=mini_batch_size, replace=True)).to(torch.float32)
-        # idx = np.random.choice(np.linspace(0, mini_batch_size-1), size=int(0.05 * mini_batch_size), replace=False)
-        idx = (torch.rand(mini_batch_size) < 0.05)
+        t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).to(torch.float32)
+        idx = (torch.rand(batch_size) < epsilon)
         t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
       
-    def step(self, y, a, flag = 1):
+    def step(self, y, a, flag=1):
         
-        mini_batch_size = y.shape[0]
+        batch_size = y.shape[0]
         
         # G = 1 is a generate a credit by investing in a project
-        G = 1.0 * (a[:,1] > torch.rand(mini_batch_size))
+        G = 1 * (a[:,1] > torch.rand(batch_size))
         
         yp = torch.zeros(y.shape)
         
         # time evolution
         yp[:,0] = y[:,0] + self.dt
         
-        # asset price evolution
-        yp[:,1] = (self.T - (y[:,0] + self.dt)) / (self.T - y[:,0]) * (y[:,1]- self.eta * self.xi * G) \
-            + self.dt / (self.T - y[:,0]) * self.pen \
-                + self.sigma * ((self.T -  (y[:,0] + self.dt)) * self.dt /  (self.T - y[:,0])) ** (1 / 2) *  torch.randn(mini_batch_size)
-                   
-                    
+        # SDE step
+        eff_vol = self.sigma * torch.sqrt((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])))
+        
+        yp[:,1] = (y[:,1]- self.eta * self.xi * G) *(self.T - yp[:,0])/(self.T-y[:,0]) \
+            + self.dt/(self.T-y[:,0]) * self.pen \
+                + eff_vol  * torch.randn(batch_size) \
+                            
         # inventory evolution
-        nu = (1.0-G) * a[:,0]
+        nu = (1-G) * a[:,0]
         yp[:,2] = y[:,2] + self.xi * G + nu * self.dt
         
-        ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()
-        
-        pen = self.pen * ind_T * torch.maximum(self.R - yp[:,2], torch.tensor(0))
-        
         # Reward
-        
-        r = -( y[:,1] * nu * self.dt \
-              + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                  + self.c * G \
-                      + pen )
+        if self.penalty == 'terminal':
+            
+            ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()
+            terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
+            
+            r = -( y[:,1] * nu *self.dt \
+                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                      + self.c * G \
+                          + ind_T * terminal_cost)
+                
+        elif self.penalty == 'diff':
+            
+            r = -( y[:,1] * nu *self.dt \
+                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                      + self.c * G \
+                          + self.diff_cost(y[:,2], yp[:,2]) )
         
         return yp, r
