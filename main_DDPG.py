@@ -51,4 +51,9 @@ for N in [10, 25, 50, 100]:
     
     dill.dump(ddpg, open('trained_' + str(N) + '.pkl', "wb"))
     
-    
+
+# from datetime import datetime
+# with open('trained_100.pkl', 'rb') as in_strm:
+#     ddpg_loaded = dill.load(in_strm)
+#     ddpg_loaded.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
+#     ddpg_loaded.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
