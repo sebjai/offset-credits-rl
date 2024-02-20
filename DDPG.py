@@ -17,6 +17,7 @@ import torch.nn as nn
 
 from tqdm import tqdm
 from ann import ann
+from combined import combined
 
 import copy
 
@@ -80,14 +81,17 @@ class DDPG():
         
         self.Q_loss = []
         self.pi_loss = []
+
+        self.PnL = list()
+        self.performance = dict()
         
     def reset(self, env):
         
         self.epsilon = []
         self.env = env
         self.pi['net'].env = env
-        self.pi['net'].nu.env = env
-        self.pi['net'].prob.env = env
+        # self.pi['net'].nu.env = env
+        # self.pi['net'].prob.env = env
         self.Q_main['net'].env = env
         self.Q_target['net'].env = env
         
@@ -104,15 +108,25 @@ class DDPG():
         # features = t, S, X
         # out = nu, p
         #
-        self.pi = {'net': pi_ann(nNodes=self.n_nodes, 
-                                 nLayers=self.n_layers,
-                                 env = self.env)}
+        # self.pi = {'net': pi_ann(nNodes=self.n_nodes,  
+        #                          nLayers=self.n_layers,
+        #                          env = self.env)}
+        
+        # self.pi['optimizer'], self.pi['scheduler'] = self.__get_optim_sched__(self.pi)
+       
+        self.pi = {'net': combined(n_in=3, 
+                              n_out=2, 
+                              nNodes=int(self.n_nodes * 1.5), 
+                              nLayers=int(self.n_layers * 1.5),
+                              out_activation=[lambda y : y, 
+                                              torch.sigmoid])}
         
         self.pi['optimizer'], self.pi['scheduler'] = self.__get_optim_sched__(self.pi)        
         
+        
         # Q - function approximation
         #
-        # features = t, S, X, nu, p
+        # features = t, S, X, nu, p 
         # out = Q
         self.Q_main = {'net' : ann(n_in=5, 
                                   n_out=1,
@@ -421,7 +435,7 @@ class DDPG():
         plot(self.pi_loss, r'$\pi$')
         
         plt.tight_layout()
-        plt.show()
+        # plt.show()
         
     def run_strategy(self, nsims=10_000, name="", N = None):
         
@@ -497,6 +511,12 @@ class DDPG():
             PnL = np.sum(r,axis=1) - naive_pen
             
         qtl = np.quantile(PnL,[0.005, 0.5, 0.995])
+
+        self.PnL = PnL
+        self.performance = dict()
+        self.performance['median'] = qtl[1]
+        self.performance['cvar'] = self.CVaR(PnL)
+        self.performance['mean'] = PnL.mean()
         
         plt.hist(PnL, bins=np.linspace(qtl[0], qtl[-1], 101), density=True)
         plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
@@ -505,12 +525,19 @@ class DDPG():
         
         plt.tight_layout()
         
-       # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
-        plt.show()   
+        plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
+        # plt.show()   
         
         t = 1.0* self.env.t
         
         return t, S, X, a, r
+
+    def CVaR(self, data, confidence_level = 0.95):
+        # Set the desired confidence level
+        signal = sorted(data)
+        cvar_index = int((1 - confidence_level) * len(signal))
+        cvar = np.mean(signal[:cvar_index])
+        return cvar
 
     def plot_policy(self, name=""):
         '''
@@ -573,11 +600,14 @@ class DDPG():
                 
             plt.tight_layout()
             
-            plt.show()
+            # plt.show()
         
         plot(0, 
              np.linspace(-self.env.nu_max, self.env.nu_max, 21), 
              "Trade Rate Heatmap over Time")
+        plt.savefig("trade_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
+
         plot(1, 
              np.linspace(0,1,21),
-             "Generation Probability Heatmap over Time")    
+             "Generation Probability Heatmap over Time")  
+        plt.savefig("generation_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
