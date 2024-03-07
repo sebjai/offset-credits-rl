@@ -1,0 +1,8 @@
+2024-03-07 17:09:38,256 INFO    StreamThr :14312 [internal.py:wandb_internal():86] W&B internal server running at pid: 14312, started at: 2024-03-07 17:09:38.256247
+2024-03-07 17:09:38,272 DEBUG   HandlerThread:14312 [handler.py:handle_request():146] handle_request: status
+2024-03-07 17:09:38,273 INFO    WriterThread:14312 [datastore.py:open_for_write():87] open: C:\Users\sebja\Dropbox\github\offset-credits-rl\multi-agent\wandb\run-20240307_170938-ia792nal\run-ia792nal.wandb
+2024-03-07 17:09:38,273 DEBUG   SenderThread:14312 [sender.py:send():382] send: header
+2024-03-07 17:09:38,319 DEBUG   SenderThread:14312 [sender.py:send():382] send: run
+2024-03-07 17:09:38,535 INFO    SenderThread:14312 [dir_watcher.py:__init__():211] watching files in: C:\Users\sebja\Dropbox\github\offset-credits-rl\multi-agent\wandb\run-20240307_170938-ia792nal\files
+2024-03-07 17:09:38,535 INFO    SenderThread:14312 [sender.py:_start_run_threads():1136] run started: ia792nal with start time 1709849378.256246
+2024-03-07 17:09:39,517 DEBUG   HandlerThread:14312 [handler.py:handle_request():146] handle_request: status_report

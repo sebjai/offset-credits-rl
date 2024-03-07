@@ -1,0 +1,8 @@
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\posdef_ann.py[22m(41)forward[1m()
+[1m     39         [22mpdb[1m.[22mset_trace[1m()
+[1m     40 
+[1m---> 41         [22mx_nrm [1m=[22m self[1m.[22mnormalize[1m([22mx[1m,[22m [1m'state')
+[1m     42 
+[1m     43         # input into  hidden layer
+RuntimeError: The size of tensor a (4) must match the size of tensor b (5) at non-singleton dimension 2
+C:\Users\sebja\Dropbox\github\offset-credits-rl\multi-agent\posdef_ann.py:65: UserWarning: The use of `x.T` on tensors of dimension other than 2 to reverse their shape is deprecated and it will throw an error in a future release. Consider `x.mT` to transpose batches of matrices or `x.permute(*torch.arange(x.ndim - 1, -1, -1))` to reverse the dimensions of a tensor. (Triggered internally at C:\cb\pytorch_1000000000000\work\aten\src\ATen\native\TensorShape.cpp:3575.)

@@ -1,0 +1,91 @@
+wandb_version: 1
+
+random_seed:
+  desc: null
+  value: 3005
+learning_rate:
+  desc: null
+  value: 0.001
+gamma:
+  desc: null
+  value: 1
+tau:
+  desc: null
+  value: 0.001
+sched_step_size:
+  desc: null
+  value: 50
+n_nodes:
+  desc: null
+  value: 200
+n_layers:
+  desc: null
+  value: 5
+epoch_scale:
+  desc: null
+  value: 200
+Q_epochs:
+  desc: null
+  value: 5
+pi_epochs:
+  desc: null
+  value: 1
+batch_size:
+  desc: null
+  value: 128
+n_plots:
+  desc: null
+  value: 50000
+T:
+  desc: null
+  value: 0.08333333333333333
+S0:
+  desc: null
+  value: 2.5
+sigma:
+  desc: null
+  value: 0.5
+kappa:
+  desc: null
+  value: 0.03
+eta:
+  desc: null
+  value: 0.05
+xi:
+  desc: null
+  value: 0.1
+c:
+  desc: null
+  value: 0.25
+R:
+  desc: null
+  value: 5
+pen:
+  desc: null
+  value: 2.5
+_wandb:
+  desc: null
+  value:
+    python_version: 3.10.9
+    cli_version: 0.16.2
+    framework: torch
+    is_jupyter_run: false
+    is_kaggle_kernel: false
+    start_time: 1709849886.945259
+    t:
+      1:
+      - 1
+      - 55
+      2:
+      - 1
+      - 55
+      3:
+      - 16
+      - 23
+      4: 3.10.9
+      5: 0.16.2
+      8:
+      - 3
+      - 5
+      - 13
+      13: windows-amd64

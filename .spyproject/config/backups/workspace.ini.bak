@@ -4,7 +4,7 @@ save_data_on_exit = True
 save_history = True
 save_non_project_files = False
 project_type = 'empty-project-type'
-recent_files = ['v2\\DDPG.py', 'v2\\main_DDPG.py', 'v2\\offset_env.py', 'v2\\ann.py']
+recent_files = ['v2\\main_DDPG.py', 'v2\\DDPG.py', 'v2\\offset_env.py']
 
 [main]
 version = 0.2.0

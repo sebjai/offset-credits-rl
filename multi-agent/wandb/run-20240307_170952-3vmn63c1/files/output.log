@@ -1,0 +1,42 @@
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\nash_dqn.py[22m(82)__initialize_NNs__[1m()
+[1m     80         [22mpdb[1m.[22mset_trace[1m()
+[1m     81 
+[1m---> 82         def[22m create_net[1m([22mn_in[1m,[22m n_out[1m,[22m n_nodes[1m,[22m n_layers[1m,[22m out_activation[1m):
+[1m     83             net = ann(n_in, n_out, n_nodes, n_layers, 
+[1m     84                       [22mout_activation [1m=[22m [1mNone,
+TypeError: nash_dqn.__initialize_NNs__.<locals>.create_net() missing 1 required positional argument: 'out_activation'
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\nash_dqn.py[22m(82)__initialize_NNs__[1m()
+[1m     80         [22mpdb[1m.[22mset_trace[1m()
+[1m     81 
+[1m---> 82         def[22m create_net[1m([22mn_in[1m,[22m n_out[1m,[22m n_nodes[1m,[22m n_layers[1m):
+[1m     83             net = ann(n_in, n_out, n_nodes, n_layers, 
+[1m     84                       [22mout_activation [1m=[22m [1mNone,
+TypeError: 'ann' object is not subscriptable
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\nash_dqn.py[22m(82)__initialize_NNs__[1m()
+[1m     80         [22mpdb[1m.[22mset_trace[1m()
+[1m     81 
+[1m---> 82         def[22m create_net[1m([22mn_in[1m,[22m n_out[1m,[22m n_nodes[1m,[22m n_layers[1m):
+[1m     83             net = ann(n_in, n_out, n_nodes, n_layers, 
+[1m     84                       [22mout_activation [1m=[22m [1mNone,
+*** AttributeError: 'nash_dqn' object has no attribute 'V'
+*** TypeError: 'dict' object is not callable
+*** AttributeError: 'posdef_ann' object has no attribute 'env'
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\nash_dqn.py[22m(82)__initialize_NNs__[1m()
+[1m     80         [22mpdb[1m.[22mset_trace[1m()
+[1m     81 
+[1m---> 82         def[22m create_net[1m([22mn_in[1m,[22m n_out[1m,[22m n_nodes[1m,[22m n_layers[1m):
+[1m     83             net = ann(n_in, n_out, n_nodes, n_layers, 
+[1m     84                       [22mout_activation [1m=[22m [1mNone,
+*** AttributeError: 'posdef_ann' object has no attribute 'n_out'
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\nash_dqn.py[22m(82)__initialize_NNs__[1m()
+[1m     80         [22mpdb[1m.[22mset_trace[1m()
+[1m     81 
+[1m---> 82         def[22m create_net[1m([22mn_in[1m,[22m n_out[1m,[22m n_nodes[1m,[22m n_layers[1m):
+[1m     83             net = ann(n_in, n_out, n_nodes, n_layers, 
+[1m     84                       [22mout_activation [1m=[22m [1mNone,
+--Call--
+> [1mc:\users\sebja\dropbox\github\offset-credits-rl\multi-agent\posdef_ann.py[22m(38)forward[1m()
+[1m     36     def[22m forward[1m([22mself[1m,[22m x[1m):
+[1m     37 
+[1m17-> 38         [22mx_nrm [1m=[22m self[1m.[22mnormalize[1m([22mx[1m,[22m [1m'state')
+[1m     39 

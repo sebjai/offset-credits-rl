@@ -1,0 +1,53 @@
+{
+    "os": "Windows-10-10.0.22631-SP0",
+    "python": "3.10.9",
+    "heartbeatAt": "2024-03-07T22:09:56.510918",
+    "startedAt": "2024-03-07T22:09:52.151592",
+    "docker": null,
+    "cuda": null,
+    "args": [],
+    "state": "running",
+    "program": "c:\\users\\sebja\\dropbox\\github\\offset-credits-rl\\multi-agent\\main_ddpg.py",
+    "codePathLocal": "main_ddpg.py",
+    "codePath": "multi-agent\\main_ddpg.py",
+    "git": {
+        "remote": "https://github.com/sebjai/offset-credits-rl.git",
+        "commit": "e8eecd09e38523bac0fa54757b6af6f0608ce8d7"
+    },
+    "email": "sebastian.jaimungal@utoronto.ca",
+    "root": "C:/Users/sebja/Dropbox/github/offset-credits-rl",
+    "host": "DESKTOP-5SC5GJ5",
+    "username": "sebja",
+    "executable": "C:\\Users\\sebja\\anaconda3\\python.exe",
+    "cpu_count": 4,
+    "cpu_count_logical": 8,
+    "cpu_freq": {
+        "current": 1298.0,
+        "min": 0.0,
+        "max": 1498.0
+    },
+    "cpu_freq_per_core": [
+        {
+            "current": 1298.0,
+            "min": 0.0,
+            "max": 1498.0
+        }
+    ],
+    "disk": {
+        "/": {
+            "total": 952.6523399353027,
+            "used": 577.8844413757324
+        }
+    },
+    "gpu": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+    "gpu_count": 1,
+    "gpu_devices": [
+        {
+            "name": "NVIDIA GeForce GTX 1660 Ti with Max-Q Design",
+            "memory_total": 6442450944
+        }
+    ],
+    "memory": {
+        "total": 31.595802307128906
+    }
+}
