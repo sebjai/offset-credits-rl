@@ -23,6 +23,7 @@ import copy
 import pdb
 
 from datetime import datetime
+import wandb
 
 class pi_ann(nn.Module):
 
@@ -214,6 +215,7 @@ class DDPG():
             
             
             self.Q_loss.append(loss.item())
+            wandb.log({'Q_loss': loss})
             
             self.soft_update(self.Q_main['net'], self.Q_target['net'])
         
@@ -244,6 +246,7 @@ class DDPG():
             self.pi['optimizer'].step()
             
             self.pi_loss.append(loss.item())
+            wandb.log({'pi_loss': loss})
             
         self.pi['scheduler'].step()
             
@@ -305,6 +308,7 @@ class DDPG():
                 self.Q_main['scheduler'].step() 
                 
                 self.Q_loss.append(loss.item())
+                wandb.log({'Q_loss': loss})
                 
                 # update pi 
                 Q = self.Q_main['net'](Y, a_cp )
@@ -321,6 +325,7 @@ class DDPG():
                 self.pi['scheduler'].step()
                 
                 self.pi_loss.append(loss.item())
+                wandb.log({'pi_loss': loss})
                 
                 Y = Y_p.detach().clone()
                 
@@ -421,7 +426,7 @@ class DDPG():
         plot(self.pi_loss, r'$\pi$')
         
         plt.tight_layout()
-        plt.show()
+        # plt.show()
         
     def run_strategy(self, nsims=10_000, name="", N = None):
         
@@ -506,11 +511,25 @@ class DDPG():
         plt.tight_layout()
         
        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
-        plt.show()   
+        # plt.show()   
         
         t = 1.0* self.env.t
         
-        return t, S, X, a, r
+        # return t, S, X, a, r
+        performance = dict()
+        performance['PnL'] = PnL
+        performance['median'] = qtl[1]
+        performance['cvar'] = self.CVaR(PnL)
+        performance['mean'] = PnL.mean()
+
+        return plt.gcf(), performance
+
+    def CVaR(self, data, confidence_level = 0.95):
+        # Set the desired confidence level
+        signal = sorted(data)
+        cvar_index = int((1 - confidence_level) * len(signal))
+        cvar = np.mean(signal[:cvar_index])
+        return cvar
 
     def plot_policy(self, name=""):
         '''
@@ -573,11 +592,13 @@ class DDPG():
                 
             plt.tight_layout()
             
-            plt.show()
+            # plt.show()
+            return fig
         
-        plot(0, 
+        trade_fig = plot(0, 
              np.linspace(-self.env.nu_max, self.env.nu_max, 21), 
              "Trade Rate Heatmap over Time")
-        plot(1, 
+        gen_fig = plot(1, 
              np.linspace(0,1,21),
              "Generation Probability Heatmap over Time")    
+        return trade_fig, gen_fig
