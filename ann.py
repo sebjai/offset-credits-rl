@@ -31,6 +31,15 @@ class ann(nn.Module):
         self.out_activation = out_activation
         self.env = env
 
+        self.apply(self._init_weights)
+        
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.kaiming_uniform_(module.weight)
+            # module.weight.data.normal_(mean=0.0, std=1.0)
+            if module.bias is not None:
+                module.bias.data.zero_()
+
     def forward(self, Y, a=None):
         
         if a is None:
