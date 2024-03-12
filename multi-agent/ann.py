@@ -33,7 +33,7 @@ class ann(nn.Module):
 
     def forward(self, x):
         
-        x_nrm = self.normalize(x, 'state')
+        x_nrm = self.normalize(x)
 
         # input into  hidden layer
         h = self.g(self.prop_in_to_h(x_nrm))
@@ -45,36 +45,26 @@ class ann(nn.Module):
         y = self.prop_h_to_out(h)
 
         if self.out_activation is not None:
-            for i in range(y.shape[-1]):
-                y[...,i] = self.out_activation[i](y[...,i])
+            for i in range(2):
+                    y[...,i::2] = self.out_activation[i](y[...,i::2])
             
         return y
 
 
-    def norm(self, k: torch.tensor, typ :str):
+    def norm(self, y: torch.tensor):
         
-        norm = torch.zeros(k.shape)
+        norm = torch.zeros(y.shape)
         
-        if typ == 'state':
-            norm[...,0] = self.env.T
-            norm[...,1] = self.env.S0
-            norm[...,2] = self.env.X_max
-            
-        if typ == 'policy':
-            norm[...,0] = self.env.nu_max
-            norm[...,1] = 1.0
-        
-        # norm = torch.ones(k.shape)
+        norm[...,0] = self.env.T
+        norm[...,1] = self.env.S0
+        norm[...,2:] = self.env.X_max
             
         return norm
 
-    def normalize(self, k: torch.tensor, typ: str):
-        '''
-        possible types: "state" and "policy"
-        '''
-        norm = self.norm(k, typ)
+    def normalize(self, y: torch.tensor):
+        norm = self.norm(y)
             
-        return k / norm
+        return y / norm
 
     def de_normalize(self, k: torch.tensor, typ: str):
         
