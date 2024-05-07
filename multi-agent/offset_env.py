@@ -66,6 +66,8 @@ class offset_env():
       
     def step(self, y, a, flag=1):
         
+        #pdb.set_trace()
+        
         batch_size = y.shape[0]
         
         # G = 1 is a generate a credit by investing in a project
@@ -79,15 +81,20 @@ class offset_env():
         # SDE step
         eff_vol = self.sigma * torch.sqrt((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])))
         
-        yp[:,1] = (y[:,1]- self.eta * self.xi * torch.sum(G,axis=-1)) *(self.T - yp[:,0])/(self.T-y[:,0]) \
+        
+        yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(self.T - yp[:,0])/(self.T-y[:,0]) \
             + self.dt/(self.T-y[:,0]) * self.pen \
                 + eff_vol  * torch.randn(batch_size)
                             
         # inventory evolution
-        nu = (1-G) * a[:,::2]
+        # nu = (1 - G) * a[:,::2] #-- assumes can only trade OR generate at any time, not both
+        nu = a[:,::2] #-- allows to simultaneously trade and generate
         yp[:,2:] = y[:,2:] + self.xi * G + nu * self.dt
         
         # Reward
+        
+       
+        
         if self.penalty == 'terminal':
             
             ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()

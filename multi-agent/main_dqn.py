@@ -20,12 +20,12 @@ import torch
 
 config={
         'random_seed': 3005,
-        'learning_rate': 0.001,
-        'gamma': 1,
-        'tau':0.001,
-        'sched_step_size': 50,
-        'n_nodes': 200,
-        'n_layers': 5,
+        'learning_rate': 0.01,
+        'gamma': 0.9999,
+        'tau':0.01,
+        'sched_step_size': 20,
+        'n_nodes': 32,
+        'n_layers': 3,
 
         # 'global_epochs': 50000,
         'epoch_scale': 200,
@@ -59,24 +59,108 @@ np.random.seed(config['random_seed'])
 
 
 #%%
+
+# xi and c have to be vectors of dimension n_agents
+
+n_agents = 1
+
+gen_capacity = torch.tensor([0.2, 0.2])
+cost = torch.tensor([0.5, 0.5])
+
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.03, 
-                            eta = 0.05, xi=0.1, c=0.25,  
+                            eta = 0.05, 
+                            xi = 0.5, c = 1.25,  
                             R=5, pen=2.5, 
-                            N = 101,
+                            n_agents=n_agents,
+                            N = 50,
                             penalty='diff')
 
 obj = nash_dqn.nash_dqn(env,
-                        n_agents=2,
+                        n_agents=n_agents,
                         gamma = config['gamma'], 
                         lr = config['learning_rate'],
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
                         name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
 
-obj.train()
+
+
+obj.train(n_iter=1_000, 
+          batch_size=256, 
+          n_plot=100)
+
+
+ #%%
  
-# #%%    
+n_agents = 2
+
+gen_capacity = torch.tensor([0.2, 0.4])
+cost = torch.tensor([0.5, 1.0])
+
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                            kappa = 0.03, 
+                            eta = 0.05, 
+                            xi = gen_capacity, c = cost,  
+                            R=5, pen=2.5, 
+                            n_agents=n_agents,
+                            N = 50,
+                            penalty='diff')
+
+obj = nash_dqn.nash_dqn(env,
+                        n_agents=n_agents,
+                        gamma = config['gamma'], 
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
+
+
+
+obj.train(n_iter=3000, 
+          batch_size=256, 
+          n_plot=100) 
+ 
+ 
+ 
+ 
+ 
+ #%%
+ 
+n_agents = 3
+
+gen_capacity = torch.tensor([0.2, 0.2, 0.2])
+cost = torch.tensor([0.5, 0.5, 0.5])
+
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                            kappa = 0.03, 
+                            eta = 0.05, 
+                            xi = gen_capacity, c = cost,  
+                            R=5, pen=2.5, 
+                            n_agents=n_agents,
+                            N = 50,
+                            penalty='diff')
+
+obj = nash_dqn.nash_dqn(env,
+                        n_agents=n_agents,
+                        gamma = config['gamma'], 
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
+
+
+
+obj.train(n_iter=1_000, 
+          batch_size=256, 
+          n_plot=100)  
+ 
+ 
+ 
+ 
+ 
+ 
+#%%    
 # # try some transfer learning -- learn with various values of N
 # # starting from the optimal from the previous value of N
 # for N in [10, 25, 50, 100]:
