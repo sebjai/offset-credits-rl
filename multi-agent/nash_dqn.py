@@ -147,12 +147,17 @@ class nash_dqn():
         for param, target_param in zip(main.parameters(), target.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
         
-    def __stack_state__(self, t, S, X):
+    def __stack_state__(self, t, S, X, plot1 = False):
         
         # normalization happens outside of stack state
-        tSX = torch.cat((t.unsqueeze(-1), 
-                        S.unsqueeze(-1),
-                        X), axis=-1)
+        if plot1 == True:
+            tSX = torch.cat((t.unsqueeze(-1), 
+                            S.unsqueeze(-1),
+                            X.unsqueeze(-1)), axis=-1)
+        else:
+            tSX = torch.cat((t.unsqueeze(-1), 
+                             S.unsqueeze(-1),
+                             X), axis=-1)
         
         return tSX
     
@@ -314,8 +319,8 @@ class nash_dqn():
                 self.loss_plots()
                 self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
                 
-                #if self.n_agents == 1:
-                #    self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
+                if self.n_agents == 1:
+                    self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
     def mv(self, x, n):
         
@@ -470,7 +475,8 @@ class nash_dqn():
             qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
             #         
             plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 101), density=True, color = colors[ag], alpha = 0.6)
-            
+            print("\n")
+            print("Agent" , (ag+1) ,"mean:" , qtl[1])
             
         #plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
         #plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
@@ -552,13 +558,12 @@ class nash_dqn():
             
             for idx, ax in enumerate(axs.flat):
                 
-                pdb.set_trace()
                 
                 t = torch.ones(NS,NX) * t_steps[idx]
-                Y = self.__stack_state__(t, Sm, Xm)
+                Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
                 
-                # normalize : Y (tSX)
-                a = self.pi['net'](Y).detach().squeeze().numpy()
+                
+                a = self.mu['net'](Y).detach().squeeze().numpy()
                 mask = (a[:,:,1]>0.999)
                 a[mask,0] = np.nan
                 cs = ax.contourf(Sm.numpy(), Xm.numpy(), a[:,:,k], 

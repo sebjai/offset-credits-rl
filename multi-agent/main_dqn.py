@@ -127,10 +127,10 @@ obj.train(n_iter=3000,
  
  #%%
  
-n_agents = 3
+n_agents = 4
 
-gen_capacity = torch.tensor([0.2, 0.2, 0.2])
-cost = torch.tensor([0.5, 0.5, 0.5])
+gen_capacity = torch.tensor([0.2, 0.2, 0.2, 0.2])
+cost = torch.tensor([0.5, 0.5, 0.5, 0.5])
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.03, 
