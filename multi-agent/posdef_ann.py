@@ -22,9 +22,7 @@ class posdef_ann(nn.Module):
         self.prop_h_to_h = nn.ModuleList(
             [nn.Linear(nNodes, nNodes) for i in range(nLayers-1)])
 
-        self.N = int(2*n_agents*(2*n_agents+1)/2)
-        self.M = int((n_agents-1)*(2*(n_agents-1) -1))
-        self.prop_h_to_out = nn.Linear(nNodes, int(self.N + self.M))
+        self.prop_h_to_out = nn.Linear(nNodes, int(3+4*n_agents*(n_agents-1)))
         
         self.n_agents = n_agents
         
@@ -47,44 +45,33 @@ class posdef_ann(nn.Module):
 
         # hidden layer to output layer
         y = self.prop_h_to_out(h)
-
+        
         # generate the P matrix
         U = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
-        W = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
         V = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
-        Q = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
-        # Q_l = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
-        
-        tril_indices = torch.tril_indices(row=2*self.n_agents, col=2*self.n_agents, offset=0)
-        U[:,tril_indices[0], tril_indices[1]] = y[:,:self.N] 
-        
-        
-        tril_indices = torch.tril_indices(row=2*(self.n_agents-1), col=2*(self.n_agents-1), offset=-1)
-        Q[:,2+tril_indices[1], 2+tril_indices[0]] = y[:,self.N:]
-        
-        
-        W[:,:2,:2] = U[:,:2,:2]
-        V[:,2:,2:] = U[:,2:,2:]
-        
-        U = U - W - V
+        W = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
 
-        V = V + Q
-        
-        # zero the top 2x2 portion and bottom 2(n-1)x2(n-1) of U
-        
-        
-        # symmetrize the remainder
-        U = 0.5*(U + U.transpose(1,2))
-        
         # generate a positive definite 2x2 embedded in the 2Kx2K
+        W[:,0,0] = y[:,0]
+        W[:,0,1] = y[:,1]
+        W[:,1,1] = y[:,2]
         
         I = torch.zeros(W.shape)
-        rng = range(2)
-        I[:,rng,rng] = 1
+        I[:,0,0] = 1
+        I[:,1,1] = 1
         
         W = torch.matmul(W, torch.transpose(W,1,2)) + 1e-5 * I
+                
         
-        P = W + U + V
+        # fill the 2 x 2(n-1) top right block of U and symmetrize
+        U[:,:2,2:] = y[:,3:3+4*(self.n_agents-1)].reshape(y.shape[0],2,-1)
+        U = U + U.transpose(1,2)
+        
+        # fill the 2(n-1) x 2(n-1) lower right block
+        V[:,2:,2:] = y[:,3+4*(self.n_agents-1):].reshape(y.shape[0],2*(self.n_agents-1),2*(self.n_agents-1))
+        
+        
+        P = U + V + W
         
         return P
 

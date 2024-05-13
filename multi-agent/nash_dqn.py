@@ -35,7 +35,7 @@ class nash_dqn():
                  n_agents=2,
                  gamma=0.9999,  
                  n_nodes=36, n_layers=3, 
-                 lr=0.001, tau=0.01, sched_step_size = 20,
+                 lr=0.001, tau=0.005, sched_step_size = 20,
                  name=""):
 
         self.env = env
@@ -184,7 +184,6 @@ class nash_dqn():
         P  = []
         psi = []
         for k in range(self.n_agents):
-            
             P.append(self.P[k]['net'](Y))
             psi.append(self.psi[k]['net'](Y))
             
@@ -215,21 +214,11 @@ class nash_dqn():
         self.mu['optimizer'].zero_grad()
         self.V_main['optimizer'].zero_grad()        
         
-    def step(self):
+    def step_optim(self, net):
+        net['optimizer'].step()
+        net['scheduler'].step()
         
-        def step_optim(net):
-            net['optimizer'].step()
-            net['scheduler'].step()
-        
-        for k in range(self.n_agents):
-            step_optim(self.P[k])
-            step_optim(self.psi[k])
-            
-        step_optim(self.mu)
-        step_optim(self.V_main)
-        
-    
-    def update(self,n_iter=1, batch_size=256, epsilon=0.01):
+    def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
@@ -285,8 +274,21 @@ class nash_dqn():
             
             self.VA_loss.append(loss.item())
             
-            self.step()
-            
+            if update =='V':
+                self.step_optim(self.V_main)
+            elif update == 'mu':
+                self.step_optim(self.mu)
+            elif update == 'A':
+                for k in range(self.n_agents):
+                    self.step_optim(self.P[k])
+                    self.step_optim(self.psi[k])
+            elif update =='all':
+                self.step_optim(self.V_main)
+                self.step_optim(self.mu)
+                for k in range(self.n_agents):
+                    self.step_optim(self.P[k])
+                    self.step_optim(self.psi[k])
+                    
             Y = copy.copy(Yp.detach())
             
             # soft update main >> target
@@ -314,8 +316,10 @@ class nash_dqn():
             self.count += 1
             
 
-            self.update(batch_size=batch_size,
-                        epsilon=epsilon)
+            self.update(batch_size=batch_size, epsilon=epsilon, update='all')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='V')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='A')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
             
             # if i == 1:
             #     pdb.set_trace()
@@ -480,7 +484,7 @@ class nash_dqn():
             
             qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
             #         
-            plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 101), density=True, color = colors[ag], alpha = 0.6)
+            plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 51), density=True, color = colors[ag], alpha = 0.6)
             print("\n")
             print("Agent" , (ag+1) ,"mean:" , qtl[1])
             

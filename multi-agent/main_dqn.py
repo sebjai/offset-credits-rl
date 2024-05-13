@@ -22,7 +22,7 @@ config={
         'random_seed': 3005,
         'learning_rate': 0.01,
         'gamma': 0.9999,
-        'tau':0.01,
+        'tau':0.005,
         'sched_step_size': 20,
         'n_nodes': 32,
         'n_layers': 3,
@@ -34,7 +34,7 @@ config={
         'batch_size': 128,
         'n_plots': 50000,
 
-        'T':1/12,
+        'T': 1/12,
         'S0':2.5,
         'sigma':0.5, 
         'kappa': 0.03, 
@@ -73,7 +73,7 @@ env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5,
                             xi = 0.5, c = 1.25,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 50,
+                            N = 11,
                             penalty='diff')
 
 obj = nash_dqn.nash_dqn(env,
@@ -88,7 +88,7 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter=1_000, 
           batch_size=256, 
-          n_plot=10)
+          n_plot=100)
 
 
  #%%
@@ -104,7 +104,7 @@ env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5,
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 50,
+                            N = 11,
                             penalty='diff')
 
 obj = nash_dqn.nash_dqn(env,
