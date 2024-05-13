@@ -88,7 +88,7 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter=1_000, 
           batch_size=256, 
-          n_plot=100)
+          n_plot=10)
 
 
  #%%

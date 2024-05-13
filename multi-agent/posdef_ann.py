@@ -22,8 +22,9 @@ class posdef_ann(nn.Module):
         self.prop_h_to_h = nn.ModuleList(
             [nn.Linear(nNodes, nNodes) for i in range(nLayers-1)])
 
-        matrix_size = 2*n_agents
-        self.prop_h_to_out = nn.Linear(nNodes, int(matrix_size*(matrix_size+1)/2))
+        self.N = int(2*n_agents*(2*n_agents+1)/2)
+        self.M = int((n_agents-1)*(2*(n_agents-1) -1))
+        self.prop_h_to_out = nn.Linear(nNodes, int(self.N + self.M))
         
         self.n_agents = n_agents
         
@@ -50,14 +51,27 @@ class posdef_ann(nn.Module):
         # generate the P matrix
         U = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
         W = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
+        V = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
+        Q = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
+        # Q_l = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
         
         tril_indices = torch.tril_indices(row=2*self.n_agents, col=2*self.n_agents, offset=0)
-        U[:,tril_indices[0], tril_indices[1]] = y  
+        U[:,tril_indices[0], tril_indices[1]] = y[:,:self.N] 
+        
+        
+        tril_indices = torch.tril_indices(row=2*(self.n_agents-1), col=2*(self.n_agents-1), offset=-1)
+        Q[:,2+tril_indices[1], 2+tril_indices[0]] = y[:,self.N:]
+        
         
         W[:,:2,:2] = U[:,:2,:2]
+        V[:,2:,2:] = U[:,2:,2:]
         
-        # zero the top 2x2 portion of U
-        U = U - W
+        U = U - W - V
+
+        V = V + Q
+        
+        # zero the top 2x2 portion and bottom 2(n-1)x2(n-1) of U
+        
         
         # symmetrize the remainder
         U = 0.5*(U + U.transpose(1,2))
@@ -70,8 +84,8 @@ class posdef_ann(nn.Module):
         
         W = torch.matmul(W, torch.transpose(W,1,2)) + 1e-5 * I
         
-        P = W + U
-            
+        P = W + U + V
+        
         return P
 
 
