@@ -11,10 +11,8 @@ import torch.nn as nn
 class ann(nn.Module):
 
     def __init__(self, n_in, n_out, nNodes, nLayers, 
-                  activation='silu', out_activation=None, env=None, dev=torch.device("cpu")):
+                  activation='silu', out_activation=None, env=None):
         super(ann, self).__init__()
-        
-        self.dev = dev 
         
         self.prop_in_to_h = nn.Linear(n_in, nNodes)
 
@@ -55,7 +53,7 @@ class ann(nn.Module):
 
     def norm(self, y: torch.tensor):
         
-        norm = torch.zeros(y.shape).to(self.dev)
+        norm = torch.zeros(y.shape)
         
         norm[...,0] = self.env.T
         norm[...,1] = self.env.S0

@@ -36,9 +36,7 @@ class nash_dqn():
                  gamma=0.9999,  
                  n_nodes=36, n_layers=3, 
                  lr=0.001, tau=0.005, sched_step_size = 20,
-                 name="", dev=torch.device("cpu")):
-    
-        self.dev = dev
+                 name=""):
 
         self.env = env
         self.n_agents = n_agents
@@ -89,7 +87,7 @@ class nash_dqn():
         def create_net(n_in, n_out, n_nodes, n_layers, out_activation = None):
             net = ann(n_in, n_out, n_nodes, n_layers, 
                       out_activation = out_activation,
-                      env=self.env, dev=self.dev).to(self.dev)
+                      env=self.env)
             
             optimizer, scheduler = self.__get_optim_sched__(net)
             
@@ -115,7 +113,7 @@ class nash_dqn():
         #   features are t, S,X
         #   output = batch x 2K x 2K 
         def create_posdef_net(n_in, n_agents, n_nodes, n_layers):
-            net = posdef_ann(n_in, n_agents, n_nodes, n_layers, env=self.env, dev=self.dev).to(self.dev)
+            net = posdef_ann(n_in, n_agents, n_nodes, n_layers, env=self.env)
             optimizer, scheduler = self.__get_optim_sched__(net)
             
             result = {'net' : net, 'optimizer' : optimizer, 'scheduler' : scheduler}
@@ -197,9 +195,9 @@ class nash_dqn():
         
         mu =[]
         for k in range(self.n_agents):
-            mu.append(torch.zeros(MU.shape).to(self.dev))
+            mu.append(torch.zeros(MU.shape))
             
-            idx = torch.ones(MU.shape[1]).bool().to(self.dev)
+            idx = torch.ones(MU.shape[1]).bool()
             idx[2*k:2*k+2] = False
             
             mu[k][:,:2] = MU[:,2*k:2*k+2]
@@ -225,7 +223,7 @@ class nash_dqn():
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
         t = 0*t # start at time zero
-        # X = 0*X # start with 0 inventory ? 
+        X = 0*X # start with 0 inventory ? 
         
         Y = self.__stack_state__(t, S, X)
         
@@ -236,13 +234,13 @@ class nash_dqn():
             MU = self.mu['net'](Y)
             
             # randomize actions -- separate randomizations on trade rates and probs
-            rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-            prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
+            rate_idx = torch.arange(0, (2*self.n_agents), 2)
+            prob_idx = torch.arange(1, (2*self.n_agents), 2)
             
-            MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
+            MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape)
             MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
             
-            MU[:, (prob_idx)] += 0.1*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
+            MU[:, (prob_idx)] += 0.1*epsilon * torch.randn(MU[:, (prob_idx)].shape)
             MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
             
             
@@ -318,10 +316,10 @@ class nash_dqn():
             self.count += 1
             
 
-            # self.update(batch_size=batch_size, epsilon=epsilon, update='all')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='V')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='A')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
+            self.update(batch_size=batch_size, epsilon=epsilon, update='all')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='V')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='A')
+            # self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
             
             # if i == 1:
             #     pdb.set_trace()
@@ -391,16 +389,16 @@ class nash_dqn():
         if N is None:
             N = self.env.N
         
-        S = torch.zeros((nsims, N)).float().to(self.dev)
-        X = torch.zeros((nsims, self.n_agents, N)).float().to(self.dev)
-        a = torch.zeros((nsims, (2 * self.n_agents), N-1)).float().to(self.dev)
-        r = torch.zeros((nsims, self.n_agents, N-1)).float().to(self.dev)
+        S = torch.zeros((nsims, N)).float()
+        X = torch.zeros((nsims, self.n_agents, N)).float()
+        a = torch.zeros((nsims, (2 * self.n_agents), N-1)).float()
+        r = torch.zeros((nsims, self.n_agents, N-1)).float()
 
 
         S[:,0] = self.env.S0
         X[:,:,0] = 0
         
-        ones = torch.ones(nsims).to(self.dev)
+        ones = torch.ones(nsims)
         
 
         for k in range(N-1):
@@ -424,14 +422,14 @@ class nash_dqn():
             S[:, k+1] = Y_p[:,1]
             X[:,:, k+1] = Y_p[:,2:]
             
-        S = S.detach().cpu().numpy()
-        X  = X.detach().cpu().numpy()
+        S = S.detach().numpy()
+        X  = X.detach().numpy()
         
-        a = a.detach().cpu().numpy()
+        a = a.detach().numpy()
         
         a = a.transpose(0,2,1)
         
-        r = r.detach().cpu().numpy()
+        r = r.detach().numpy()
 
         plt.figure(figsize=(8,5))
         n_paths = 3
@@ -544,14 +542,12 @@ class nash_dqn():
         
         NS = 51
         S = torch.linspace(self.env.S0-3*self.env.inv_vol,
-                           self.env.S0+3*self.env.inv_vol, NS).to(self.dev)
+                           self.env.S0+3*self.env.inv_vol, NS)
         
         NX = 51
-        X = torch.linspace(-1, self.env.X_max, NX).to(self.dev)
+        X = torch.linspace(-1, self.env.X_max, NX)
         
         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
-        Sm = Sm.to(self.dev)
-        Xm = Xm.to(self.dev)
 
         def plot(k, lvls, title):
             
@@ -572,14 +568,14 @@ class nash_dqn():
             for idx, ax in enumerate(axs.flat):
                 
                 
-                t = torch.ones(NS,NX).to(self.dev) * t_steps[idx]
+                t = torch.ones(NS,NX) * t_steps[idx]
                 Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
                 
                 
-                a = self.mu['net'](Y).detach().squeeze().cpu().numpy()
+                a = self.mu['net'](Y).detach().squeeze().numpy()
                 mask = (a[:,:,1]>0.999)
                 a[mask,0] = np.nan
-                cs = ax.contourf(Sm.cpu().numpy(), Xm.cpu().numpy(), a[:,:,k], 
+                cs = ax.contourf(Sm.numpy(), Xm.numpy(), a[:,:,k], 
                                   levels=lvls,
                                   cmap='RdBu')
                 # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
@@ -612,6 +608,178 @@ class nash_dqn():
              np.linspace(0,1,21),
              "Generation Probability Heatmap over Time")    
         return trade_fig, gen_fig
+    
+    
+    
+    # def Update_Q(self, n_iter = 10, batch_size=256, epsilon=0.02, 
+    #              progress_bar=False):
+        
+    #     rg = range(n_iter) 
+    #     if progress_bar:
+    #         rg = tqdm(rg)
+            
+    #     for i in rg: 
+            
+    #         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
+            
+            
+    #         # concatenate states
+    #         Y = self.__stack_state__(t, S, X)
+            
+    #         # normalize : Y (tSX)
+    #         # get pi (policy)
+    #         a = self.pi['net'](Y).detach()
 
+    #         # randomize actions
+    #         a[:,0] += 0.5*self.env.nu_max*epsilon*torch.randn((batch_size,))
+    #         a[:,0] = torch.clip(a[:,0], min=-self.env.nu_max, max=self.env.nu_max)
+    #         a[:,1] += epsilon * torch.randn((batch_size,))
+    #         a[:,1] = torch.clip(a[:,1], min=0, max=1)
+
+    #         # get Q
+    #         Q = self.Q_main['net'](Y, a )
+
+    #         # step in the environment
+    #         Y_p, r = self.env.step(Y, a)
+            
+    #         ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
+
+    #         # compute the Q(S', a*)
+    #         # optimal policy at t+1
+    #         a_p = self.pi['net'](Y_p).detach()
+            
+    #         # compute the target for Q
+    #         Q_p = self.Q_target['net'](Y_p, a_p)
+    #         target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * Q_p
+
+    #         loss = torch.mean((target.detach() - Q)**2)
+            
+    #         # compute the gradients
+    #         self.Q_main['optimizer'].zero_grad()
+            
+    #         loss.backward()
+            
+    #         # torch.nn.utils.clip_grad_norm_(self.Q_main['net'].parameters(), 1)
+
+    #         # perform step using those gradients
+    #         self.Q_main['optimizer'].step()                
+            
+            
+    #         self.Q_loss.append(loss.item())
+    #         wandb.log({'Q_loss': loss})
+            
+    #         self.soft_update(self.Q_main['net'], self.Q_target['net'])
+        
+    #     self.Q_main['scheduler'].step() 
+    #     # self.Q_target = copy.deepcopy(self.Q_main)
+        
+    # def Update_pi(self, n_iter = 10, batch_size=256, epsilon=0.02):
+
+    #     for i in range(n_iter):
+            
+    #         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
+            
+    #         # concatenate states 
+    #         Y = self.__stack_state__(t, S, X)
+
+    #         a = self.pi['net'](Y)
+            
+    #         Q = self.Q_main['net'](Y,a )
+            
+    #         loss = -torch.mean(Q)
+                
+    #         self.pi['optimizer'].zero_grad()
+            
+    #         loss.backward()
+            
+    #         # torch.nn.utils.clip_grad_norm_(self.pi['net'].parameters(), 1)
+            
+    #         self.pi['optimizer'].step()
+            
+    #         self.pi_loss.append(loss.item())
+    #         wandb.log({'pi_loss': loss})
+            
+    #     self.pi['scheduler'].step()
+            
+    # def Update_Q_pi(self, n_iter = 10, batch_size=256, epsilon=0.02):
+        
+    #     for i in range(n_iter): 
+            
+    #         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
+            
+    #         t *= 0
+    #         S[:] = self.env.S0
+    #         X[:] = 0
+            
+    #         # concatenate states
+    #         Y = self.__stack_state__(t, S, X)
+            
+    #         for j in range(self.env.N-1):
+            
+    #             # normalize : Y (tSX)
+    #             # get pi (policy)
+    #             a = self.pi['net'](Y)
+    #             a_cp = a.clone()
+    #             a = a.detach()
+    
+    #             # randomize actions
+    #             a[:,0] += 10*epsilon*torch.randn((batch_size,))
+    #             a[:,0] = torch.clip(a[:,0], min=-self.env.nu_max, max=self.env.nu_max)
+                
+    #             a[:,1] += 0.5*epsilon * torch.randn((batch_size,))
+    #             a[:,1] = torch.clip(a[:,1], min=0, max=1)
+    
+    #             # get Q
+    #             Q = self.Q_main['net'](Y, a )
+    
+    #             # step in the environment
+    #             Y_p, r = self.env.step(Y, a)
+                
+    #             ind_T = 1.0 * (torch.abs(Y_p[:,0] - self.env.T) <= 1e-6).reshape(-1,1)
+    
+    #             # compute the Q(S', a*)
+    #             # optimal policy at t+1
+    #             a_p = self.pi['net'](Y_p).detach()
+                
+    #             # compute the target for Q
+    #             Q_p = self.Q_target['net'](Y_p, a_p)
+    #             target = r.reshape(-1,1) + (1.0 - ind_T) * self.gamma * Q_p
+    
+    #             loss = torch.mean((target.detach() - Q)**2)
+                
+    #             # compute the gradients
+    #             self.Q_main['optimizer'].zero_grad()
+                
+    #             loss.backward()
+                
+    #             # torch.nn.utils.clip_grad_norm_(self.Q_main['net'].parameters(), 1)
+    
+    #             # perform step using those gradients
+    #             self.Q_main['optimizer'].step()                
+    #             self.Q_main['scheduler'].step() 
+                
+    #             self.Q_loss.append(loss.item())
+    #             wandb.log({'Q_loss': loss})
+                
+    #             # update pi 
+    #             Q = self.Q_main['net'](Y, a_cp )
+                
+    #             loss = -torch.mean(Q)
+                    
+    #             self.pi['optimizer'].zero_grad()
+                
+    #             loss.backward()
+                
+    #             # torch.nn.utils.clip_grad_norm_(self.pi['net'].parameters(), 1)
+                
+    #             self.pi['optimizer'].step()
+    #             self.pi['scheduler'].step()
+                
+    #             self.pi_loss.append(loss.item())
+    #             wandb.log({'pi_loss': loss})
+                
+    #             Y = Y_p.detach().clone()
+                
+    #             self.soft_update(self.Q_main['net'], self.Q_target['net'])  
 
 

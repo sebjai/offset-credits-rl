@@ -16,9 +16,7 @@ class offset_env():
     def __init__(self, T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
                      c=0.25, S0=2.5, R=5, pen=2.5, N=51,
                      n_agents=2,
-                     penalty='terminal', dev=torch.device("cpu")):
-        
-        self.dev = dev   
+                     penalty='terminal'):
         
         self.T=T
          # trading friction
@@ -54,14 +52,14 @@ class offset_env():
         # experiment with distributions
         # penalty + N(0,1)
         # S0 = self.S0 + 3*torch.randn(batch_size) * self.inv_vol 
-        u = torch.rand(batch_size).to(self.dev)
+        u = torch.rand(batch_size)
         S0 = (self.S0 - 3*self.inv_vol) * (1-u) \
             + (self.S0 + 3*self.inv_vol) * u
         # Unifrom(0,x_max)
-        X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
+        X0 = torch.rand(batch_size, self.n_agents) * self.X_max
         # randomized time 
-        t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
-        idx = (torch.rand(batch_size).to(self.dev) < epsilon)
+        t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).to(torch.float32)
+        idx = (torch.rand(batch_size) < epsilon)
         t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
@@ -73,9 +71,9 @@ class offset_env():
         batch_size = y.shape[0]
         
         # G = 1 is a generate a credit by investing in a project
-        G = 1 * (a[:,1::2] > torch.rand(batch_size, self.n_agents).to(self.dev))
+        G = 1 * (a[:,1::2] > torch.rand(batch_size, self.n_agents))
         
-        yp = torch.zeros(y.shape).to(self.dev)
+        yp = torch.zeros(y.shape)
         
         # time evolution
         yp[:,0] = y[:,0] + self.dt
@@ -86,7 +84,7 @@ class offset_env():
         
         yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(self.T - yp[:,0])/(self.T-y[:,0]) \
             + self.dt/(self.T-y[:,0]) * self.pen \
-                + eff_vol  * torch.randn(batch_size).to(self.dev)
+                + eff_vol  * torch.randn(batch_size)
                             
         # inventory evolution
         # nu = (1 - G) * a[:,::2] #-- assumes can only trade OR generate at any time, not both

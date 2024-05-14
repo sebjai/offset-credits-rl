@@ -64,13 +64,13 @@ np.random.seed(config['random_seed'])
 
 n_agents = 1
 
-gen_capacity = torch.tensor([0.2, 0.2])
-cost = torch.tensor([0.5, 0.5])
+gen_capacity = torch.tensor([0.5])
+cost = torch.tensor([1.25])
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.03, 
                             eta = 0.05, 
-                            xi = 0.5, c = 1.25,  
+                            xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
                             N = 11,

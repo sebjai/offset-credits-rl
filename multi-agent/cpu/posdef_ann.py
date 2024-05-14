@@ -12,11 +12,9 @@ import pdb
 class posdef_ann(nn.Module):
 
     def __init__(self, n_in, n_agents, nNodes, nLayers, 
-                  activation='silu', env = None, dev=torch.device("cpu")):
+                  activation='silu', env = None):
         super(posdef_ann, self).__init__()
         
-        self.dev = dev
-                
         self.env = env
         
         self.prop_in_to_h = nn.Linear(n_in, nNodes)
@@ -49,16 +47,16 @@ class posdef_ann(nn.Module):
         y = self.prop_h_to_out(h)
         
         # generate the P matrix
-        U = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents)).to(self.dev)
-        V = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents)).to(self.dev)
-        W = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents)).to(self.dev)
+        U = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
+        V = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
+        W = torch.zeros((x.shape[0], 2*self.n_agents, 2*self.n_agents))
         
         # generate a positive definite 2x2 embedded in the 2Kx2K
         W[:,0,0] = y[:,0]
         W[:,0,1] = y[:,1]
         W[:,1,1] = y[:,2]
         
-        I = torch.zeros(W.shape).to(self.dev)
+        I = torch.zeros(W.shape)
         I[:,0,0] = 1
         I[:,1,1] = 1
         
@@ -77,10 +75,11 @@ class posdef_ann(nn.Module):
         P = U + V + W
         
         return P
-    
+
+
     def norm(self, y: torch.tensor):
         
-        norm = torch.zeros(y.shape).to(self.dev)
+        norm = torch.zeros(y.shape)
         
         norm[...,0] = self.env.T
         norm[...,1] = self.env.S0
@@ -100,4 +99,4 @@ class posdef_ann(nn.Module):
         
         norm = self.norm(k, typ)
             
-        return k * norm    
+        return k * norm
