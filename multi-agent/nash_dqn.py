@@ -181,17 +181,28 @@ class nash_dqn():
         # Y = (t, S, X_1,..., X_K)
         
         MU = self.mu['net'](Y)
+        MUp = self.mu['net'](Yp)
+        
         V = self.V_main['net'](Y)
         Vp = self.V_target['net'](Yp)
+        
         P  = []
         psi = []
+        
+        P_p = []
+        psi_p = []
+        
         for k in range(self.n_agents):
             P.append(self.P[k]['net'](Y))
             psi.append(self.psi[k]['net'](Y))
             
-        mu = self.reorder_actions(MU)
+            P_p.append(self.P[k]['net'](Yp))
+            psi_p.append(self.psi[k]['net'](Yp))
             
-        return mu, V, Vp, P, psi
+        mu = self.reorder_actions(MU)
+        mu_p = self.reorder_actions(MUp)
+            
+        return mu, mu_p, V, Vp, P, P_p, psi, psi_p
             
     def reorder_actions(self, MU):
         
@@ -248,7 +259,7 @@ class nash_dqn():
             
             Yp, r = self.env.step(Y, MU)
             
-            mu, V, Vp, P, psi = self.get_value_advantage_mu(Y, Yp)
+            mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp)
             
             
             # ADD IN REPLAY BUFFER AND SAMPLING FROM IT
@@ -256,11 +267,16 @@ class nash_dqn():
             MU_r = self.reorder_actions(MU)
             
             A = []
+            Ap = []
             
             for k in range(self.n_agents):
                 dmu = MU_r[k]-mu[k]
                 A.append(- torch.einsum('...i,...ij,...j->...', dmu, P[k] , dmu) \
                          + torch.einsum('...i,...i->...', dmu[:,2:], psi[k]) )
+                    
+                dmu_p = mu_p[k] - mu_p[k].detach()
+                Ap.append(- torch.einsum('...i,...ij,...j->...', dmu_p, P_p[k] , dmu_p) \
+                         + torch.einsum('...i,...i->...', dmu_p[:,2:], psi_p[k]) )
             
             # if i == self.env.N-4:
             #     pdb.set_trace()
@@ -268,7 +284,7 @@ class nash_dqn():
             not_done = 1 - 1*(i == (self.env.N-2))
             for k in range(self.n_agents):
                 loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
-                                     - not_done * self.gamma * Vp[:,k].detach() )**2  )
+                                     - not_done * self.gamma * (Vp[:,k].detach() - Ap[k].detach()) )**2  )
                 
             self.zero_grad()
             
@@ -318,7 +334,7 @@ class nash_dqn():
             self.count += 1
             
 
-            # self.update(batch_size=batch_size, epsilon=epsilon, update='all')
+            #  self.update(batch_size=batch_size, epsilon=epsilon, update='all')
             self.update(batch_size=batch_size, epsilon=epsilon, update='V')
             self.update(batch_size=batch_size, epsilon=epsilon, update='A')
             self.update(batch_size=batch_size, epsilon=epsilon, update='mu')

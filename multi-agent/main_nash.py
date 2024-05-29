@@ -104,8 +104,8 @@ obj.train(n_iter=1_000,
  
 n_agents = 2
 
-gen_capacity = torch.tensor([0.2, 0.4])
-cost = torch.tensor([0.5, 1.0])
+gen_capacity = torch.tensor([0.2, 0.4]).to(dev)
+cost = torch.tensor([0.5, 1.0]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.03, 
@@ -138,8 +138,8 @@ obj.train(n_iter=3000,
  
 n_agents = 4
 
-gen_capacity = torch.tensor([0.2, 0.2, 0.2, 0.2])
-cost = torch.tensor([0.5, 0.5, 0.5, 0.5])
+gen_capacity = torch.tensor([0.2, 0.2, 0.4, 0.4]).to(dev)
+cost = torch.tensor([0.5, 0.5, 1, 1]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.03, 
