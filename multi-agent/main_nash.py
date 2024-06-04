@@ -27,18 +27,18 @@ else:
 
 config={
         'random_seed': 3005,
-        'learning_rate': 0.01,
+        'learning_rate': 0.0001,
         'gamma': 0.9999,
-        'tau':0.005,
-        'sched_step_size': 20,
-        'n_nodes': 32,
+        'tau':0.05,
+        'sched_step_size': 30,
+        'n_nodes': 36,
         'n_layers': 3,
 
         # 'global_epochs': 50000,
         'epoch_scale': 200,
         'Q_epochs': 5,
         'pi_epochs': 1,
-        'batch_size': 128,
+        'batch_size': 1024,
         'n_plots': 50000,
 
         'T': 1/12,
@@ -95,9 +95,9 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=1_000, 
-          batch_size=1024, 
-          n_plot=100)
+obj.train(n_iter=5000, 
+          batch_size=512, 
+          n_plot=1000)
 
 
  #%%
