@@ -48,7 +48,8 @@ class offset_env():
         
         self.penalty = penalty
         self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
-                                            - torch.maximum(self.R - x0, torch.tensor(0)) )        
+                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) 
+        self.terminal_cost = lambda x0 : self.pen * torch.maximum ( self.R - x0, torch.tensor(0))
         
     def randomize(self, batch_size=10, epsilon=0):
         # experiment with distributions
@@ -99,13 +100,14 @@ class offset_env():
         
         if self.penalty == 'terminal':
             
-            ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()
-            # terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
+            ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
             
-            # r = -( y[:,1] * nu *self.dt \
-            #       + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-            #           + self.c * G \
-            #               + ind_T * terminal_cost)
+            #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
+            
+            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                      + self.c * G \
+                          + ind_T * self.terminal_cost(yp[:,2:]))
                 
         elif self.penalty == 'diff':
             

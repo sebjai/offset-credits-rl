@@ -326,7 +326,8 @@ class nash_dqn():
         
         if len(self.epsilon)==0:
             self.count=0
-            
+        
+        # pdb.set_trace
         for i in tqdm(range(n_iter)):
             
             epsilon = np.maximum(C/(D+len(self.epsilon)), 0.02)
@@ -397,6 +398,7 @@ class nash_dqn():
         
         plt.tight_layout()
         # plt.show()
+        return plt.gcf()
         
     # TODO: Update run_strategy and the plots
     
@@ -420,8 +422,6 @@ class nash_dqn():
         
 
         for k in range(N-1):
-            
-            
             
             Y = self.__stack_state__(self.env.t[k]* ones ,S[:,k], X[:,:,k])
 
@@ -528,20 +528,20 @@ class nash_dqn():
 # =============================================================================
         
        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
-        plt.show()   
+        # plt.show()   
         
-        t = 1.0* self.env.t
+        # t = 1.0* self.env.t
         
         # return t, S, X, a, r
 # =============================================================================
-#         performance = dict()
-#         performance['PnL'] = PnL
-#         performance['median'] = qtl[1]
-#         performance['cvar'] = self.CVaR(PnL)
-#         performance['mean'] = PnL.mean()
+        performance = dict()
+        performance['PnL'] = PnL
+        performance['median'] = qtl[1]
+        performance['cvar'] = self.CVaR(PnL)
+        performance['mean'] = PnL.mean()
 # 
 # =============================================================================
-        return plt.gcf() #, performance
+        return plt.gcf(), performance
 
     def CVaR(self, data, confidence_level = 0.95):
         # Set the desired confidence level
@@ -617,7 +617,7 @@ class nash_dqn():
                 
             plt.tight_layout()
             
-            plt.show()
+            # plt.show()
             
             return fig
         
