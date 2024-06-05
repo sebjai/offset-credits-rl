@@ -95,9 +95,6 @@ class offset_env():
         yp[:,2:] = y[:,2:] + self.xi * G + nu * self.dt
         
         # Reward
-        
-       
-        
         if self.penalty == 'terminal':
             
             ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
