@@ -10,6 +10,9 @@ from offset_env import offset_env as Environment
 import numpy as np
 import matplotlib.pyplot as plt
 
+import matplotlib
+matplotlib.use('agg')
+
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -498,23 +501,10 @@ class nash_dqn():
             
         for ag in range(self.n_agents):
             pnl_ag = PnL[:,ag]
-            
             qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
-            #         
             plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 51), density=True, color = colors[ag], alpha = 0.6)
-            print("\n")
-            print("Agent" , (ag+1) ,"mean:" , qtl[1])
+            print("\nAgent" , (ag+1) ,"mean:" , qtl[1])
             
-        #plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
-        #plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
-        
-        
-        #plt.xlim(qtl[0], qtl[-1])
-            #   
-            
-        plt.tight_layout()
-            
-        
 # =============================================================================
 #             
 #         qtl = np.quantile(PnL,[0.005, 0.5, 0.995])
@@ -524,23 +514,23 @@ class nash_dqn():
 #         plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
 #         plt.xlim(qtl[0], qtl[-1])
 #         
-#         plt.tight_layout()
 # =============================================================================
         
-       # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
+        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
         # plt.show()   
         
         # t = 1.0* self.env.t
         
         # return t, S, X, a, r
 # =============================================================================
+
         performance = dict()
         performance['PnL'] = PnL
         performance['median'] = qtl[1]
         performance['cvar'] = self.CVaR(PnL)
         performance['mean'] = PnL.mean()
-# 
-# =============================================================================
+
+        plt.tight_layout()
         return plt.gcf(), performance
 
     def CVaR(self, data, confidence_level = 0.95):
