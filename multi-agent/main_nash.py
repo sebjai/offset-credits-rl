@@ -15,6 +15,7 @@ import numpy as np
 import sys
 import torch
 import pandas as pd
+import pdb
 
 #%%
 if torch.cuda.is_available():  
@@ -24,7 +25,7 @@ else:
 
 
 #%%
-# wandb.login()
+wandb.login()
 
 def main(config_inject=dict()):
     config={
@@ -39,7 +40,7 @@ def main(config_inject=dict()):
             'n_nodes': 36,
             'n_layers': 3,
 
-            'epoch_scale': 200,
+            'epoch_scale': 250,
             'batch_size': 512,
             'n_plots': 1000,
 
@@ -57,6 +58,8 @@ def main(config_inject=dict()):
             'R':5, 
             # unit terminal penalty
             'pen':2.5,
+            # penalty type
+            'penalty': "diff",
 
             **config_inject
         }
@@ -64,14 +67,14 @@ def main(config_inject=dict()):
     run = wandb.init(
         project='nash-dqn',
         entity='offset-credits',
-        name = 'test_sweep',
+        name = 'main',
         # hyperparameters and metadata
         config=config,
     )
 
     # set seeds
-    torch.manual_seed(config['random_seed'])
-    np.random.seed(config['random_seed'])
+    torch.manual_seed(wandb.config['random_seed'])
+    np.random.seed(wandb.config['random_seed'])
 
 
     #%%
@@ -85,28 +88,27 @@ def main(config_inject=dict()):
 
     env = offset_env.offset_env(
                                 N = 11,
-                                T=config['T'], S0=config['S0'], sigma=config['sigma'], 
-                                kappa = config['kappa'], 
-                                eta = config['eta'],  
+                                T=wandb.config['T'], S0=wandb.config['S0'], sigma=wandb.config['sigma'], 
+                                kappa = wandb.config['kappa'], eta = wandb.config['eta'],  
                                 xi = config['xi'], c = config['c'],  
-                                R=config['R'], pen=config['pen'], 
-                                n_agents=config['n_agents'],
-                                penalty='diff',
+                                R=wandb.config['R'], pen=wandb.config['pen'], 
+                                n_agents=wandb.config['n_agents'],
+                                penalty=wandb.config['penalty'],
                                 dev=dev)
 
     obj = nash_dqn.nash_dqn(env,
-                            n_agents=config['n_agents'],
-                            gamma = config['gamma'], 
-                            lr = config['learning_rate'],
-                            tau = config['tau'],
-                            sched_step_size=config['sched_step_size'],
-                            name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
+                            n_agents=wandb.config['n_agents'],
+                            gamma = wandb.config['gamma'], 
+                            lr = wandb.config['learning_rate'],
+                            tau = wandb.config['tau'],
+                            sched_step_size=wandb.config['sched_step_size'],
+                            name="test", n_nodes=wandb.config['n_nodes'], n_layers=wandb.config['n_layers'],
                             dev=dev)
 
 
-    obj.train(n_iter=config['epoch_scale'] * N, 
-              batch_size=config['batch_size'], 
-              n_plot=config['n_plots'])
+    obj.train(n_iter=wandb.config['epoch_scale'] * N, 
+              batch_size=wandb.config['batch_size'], 
+              n_plot=wandb.config['n_plots'])
 
     # log performance 
     eval_fig, performance = obj.run_strategy(nsims=1000)
@@ -140,32 +142,23 @@ def main(config_inject=dict()):
     wandb.finish()    
 
 
-main()
-
-# Testing
-# hps = pd.read_csv('hp_test.csv')
-# for i in range(len(hps)):
-#     main(config_inject={
-#         _col : hps.iloc[i][_col] for _col in hps.columns
-#     })
-
-
+# main()
 
 # Hyperparameter Tuning 
 # 2: Define the search space
-# sweep_configuration = {
-#     "method": "random",
-#     "metric": {"goal": "maximize", "name": "cvar"},
-#     "parameters": {
-#         "learning_rate": {"max": 0.005, "min": 0.00001},
-#         "sched_step_size": {"max": 0.005, "min": 0.00001},
-#         "epoch_scale": {"min": 200, "max": 400},
-#     },
-# }
+sweep_configuration = {
+    "method": "random",
+    "metric": {"goal": "maximize", "name": "cvar"},
+    "parameters": {
+        "learning_rate": {"max": 0.005, "min": 0.00001},
+        "sched_step_size": {"max": 0.005, "min": 0.00001},
+        # "epoch_scale": {"min": 200, "max": 400},
+    },
+}
 # sweep setup
-# sweep_id = wandb.sweep(sweep=sweep_configuration, project="nash-dqn", entity='offset-credits')
-# print(sweep_id)
-# wandb.agent(sweep_id, function=main, count=10)
+sweep_id = wandb.sweep(sweep=sweep_configuration, project="nash-dqn", entity='offset-credits')
+print(sweep_id)
+wandb.agent(sweep_id, function=main, count=25)
 
 
 
