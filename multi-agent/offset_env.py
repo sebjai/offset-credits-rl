@@ -49,7 +49,11 @@ class offset_env():
         self.penalty = penalty
         self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
                                             - torch.maximum(self.R - x0, torch.tensor(0)) ) 
+            
         self.terminal_cost = lambda x0 : self.pen * torch.maximum ( self.R - x0, torch.tensor(0))
+        
+        self.term_excess = lambda x0, s0 :  - self.pen * torch.maximum (self.R - x0, torch.tensor(0)) \
+                                            + torch.einsum('ij,i->ij', torch.maximum (x0 - self.R, torch.tensor(0)), s0)
         
     def randomize(self, batch_size=10, epsilon=0):
         # experiment with distributions
@@ -82,32 +86,67 @@ class offset_env():
         yp[:,0] = y[:,0] + self.dt
         
         # SDE step
-        eff_vol = self.sigma * torch.sqrt((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])))
+        
+        #pdb.set_trace()
+        
+        
+        if (self.T - yp[0,0]) < 0:
+            eff_vol = 0
+        else:
+            eff_vol = self.sigma * torch.sqrt((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])))
         
         
         yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(self.T - yp[:,0])/(self.T-y[:,0]) \
             + self.dt/(self.T-y[:,0]) * self.pen \
                 + eff_vol  * torch.randn(batch_size).to(self.dev)
-                            
+        
+
         # inventory evolution
         # nu = (1 - G) * a[:,::2] #-- assumes can only trade OR generate at any time, not both
+        
         nu = a[:,::2] #-- allows to simultaneously trade and generate
+        
         yp[:,2:] = y[:,2:] + self.xi * G + nu * self.dt
         
         # Reward
         
-       
+        #pdb.set_trace()
         
         if self.penalty == 'terminal':
             
-            ind_T = (torch.abs(yp[:,0]-self.T)<1e-6).int()
+            ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
             
-            #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
+            if ind_T:
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                          + self.c * G \
+                              + ind_T * self.terminal_cost(yp[:,2:]) )
+                    
+            else:
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                          + self.c * G )
             
-            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                      + self.c * G \
-                          + ind_T * self.terminal_cost(yp[:,2:]))
+                
+        elif self.penalty == 'term_excess':
+            
+            ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
+            
+            if ind_T:
+                fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.03))
+                    
+                #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
+                
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                          + self.c * G ) \
+                              + ind_T * self.term_excess(yp[:,2:], fut_price) 
+            else:
+            
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                          + self.c * G )
+            
                 
         elif self.penalty == 'diff':
             
