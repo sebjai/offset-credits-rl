@@ -66,11 +66,11 @@ np.random.seed(config['random_seed'])
 
 n_agents = 1
 
-gen_capacity = torch.tensor([0]).to(dev)
-cost = torch.tensor([200.5]).to(dev)
+gen_capacity = torch.tensor([0.5]).to(dev)
+cost = torch.tensor([1.25]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
-                            kappa = 1.5, 
+                            kappa = 0.1, 
                             eta = 0.05, 
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
@@ -92,7 +92,7 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter=3000, 
           batch_size=512, 
-          n_plot=1000)
+          n_plot=200)
 
 
 #%%
