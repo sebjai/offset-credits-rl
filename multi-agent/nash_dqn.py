@@ -282,19 +282,6 @@ class nash_dqn():
             # randomize actions -- separate randomizations on trade rates and probs
             
             MU = self.randomize_actions(MU, epsilon)
-# =============================================================================
-#             rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-#             prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
-#             
-#             MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
-#             MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
-#             
-#             MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
-#             MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
-# =============================================================================
-            
-            #pdb.set_trace()
-            
             
             #pdb.set_trace()
             
@@ -375,17 +362,6 @@ class nash_dqn():
             
             # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
-# =============================================================================
-#             rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-#             prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
-#             
-#             MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
-#             MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
-#             
-#             MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
-#             MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
-# =============================================================================
-            
             #pdb.set_trace()
             
         Yp, r = self.env.step(Y, MU)
