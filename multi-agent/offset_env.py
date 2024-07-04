@@ -133,7 +133,7 @@ class offset_env():
             ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
             
             if ind_T:
-                fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.03))
+                fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.5))
                     
                 #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
                 

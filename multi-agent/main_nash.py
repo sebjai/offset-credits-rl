@@ -26,20 +26,15 @@ else:
 #wandb.login()
 
 config={
-        'random_seed': 3005,
-        'learning_rate': 0.0001,
+        'random_seed': 252525,
+        'learning_rate': 0.005,
         'gamma': 0.9999,
-        'tau':0.05,
-        'sched_step_size': 30,
-        'n_nodes': 36,
+        'tau':0.075,
+        'sched_step_size': 100,
+        'n_nodes': 45,
         'n_layers': 3,
 
         # 'global_epochs': 50000,
-        'epoch_scale': 200,
-        'Q_epochs': 5,
-        'pi_epochs': 1,
-        'batch_size': 1024,
-        'n_plots': 50000,
 
         'T': 1/12,
         'S0':2.5,
@@ -71,17 +66,17 @@ np.random.seed(config['random_seed'])
 
 n_agents = 1
 
-gen_capacity = torch.tensor([2*0.5]).to(dev)
-cost = torch.tensor([2*1.25]).to(dev)
+gen_capacity = torch.tensor([0]).to(dev)
+cost = torch.tensor([200.5]).to(dev)
 
-env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
-                            kappa = 0.03, 
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
+                            kappa = 1.5, 
                             eta = 0.05, 
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 11,
-                            penalty='diff',
+                            N = 26,
+                            penalty='term_excess',
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
@@ -95,10 +90,62 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=5000, 
+obj.train(n_iter=3000, 
           batch_size=512, 
           n_plot=1000)
 
+
+#%%
+
+# =============================================================================
+# env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+#                             kappa = 1, 
+#                             eta = 0.05, 
+#                             xi = gen_capacity, c = cost,  
+#                             R=5, pen=2.5, 
+#                             n_agents=n_agents,
+#                             N = 26,
+#                             penalty='diff',
+#                             dev=dev)
+# 
+#  
+# =============================================================================
+
+for kappas in [1.5, 1, 0.5, 0.25]:
+
+    print("\n***************************************")
+    print("kappa=" + str(kappas))
+    
+    scale = 1 #(100/N)
+
+    env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                                kappa = kappas, 
+                                eta = 0.05, 
+                                xi = gen_capacity, c = cost,  
+                                R=5, pen=2.5, 
+                                n_agents=n_agents,
+                                N = 26,
+                                penalty='diff',
+                                dev=dev)
+    
+    obj.reset(env)    
+    
+    obj = nash_dqn.nash_dqn(env,
+                            n_agents=n_agents,
+                            gamma = config['gamma'], 
+                            lr = config['learning_rate'],
+                            tau = config['tau'],
+                            sched_step_size=config['sched_step_size'],
+                            name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
+                            dev=dev)
+    
+    obj.train(n_iter=1000, 
+              batch_size=512, 
+              n_plot=1000)
+
+    # log performance
+   
+dill.dump(obj, open('trained_kappa' + '.pkl', "wb"))
 
  #%%
  
@@ -108,13 +155,13 @@ gen_capacity = torch.tensor([0.2, 0.4]).to(dev)
 cost = torch.tensor([0.5, 1.0]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
-                            kappa = 0.03, 
-                            eta = 0.05, 
+                            kappa = 0.15, 
+                            eta = 0.1, 
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 11,
-                            penalty='diff')
+                            N = 25,
+                            penalty='term_excess')
 
 obj = nash_dqn.nash_dqn(env,
                         n_agents=n_agents,
@@ -127,8 +174,8 @@ obj = nash_dqn.nash_dqn(env,
 
 
 obj.train(n_iter=3000, 
-          batch_size=256, 
-          n_plot=100) 
+          batch_size=512, 
+          n_plot=1000) 
  
  
  
