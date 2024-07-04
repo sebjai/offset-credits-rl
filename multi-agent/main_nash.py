@@ -76,7 +76,7 @@ env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25,
                             R=5, pen=2.5, 
                             n_agents=n_agents,
                             N = 26,
-                            penalty='term_excess',
+                            penalty='diff',
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
@@ -91,8 +91,9 @@ obj = nash_dqn.nash_dqn(env,
 
 
 obj.train(n_iter=3000, 
-          batch_size=512, 
-          n_plot=200)
+          batch_size=5, 
+          n_plot=1000,
+          update_type = 'rand_time')
 
 
 #%%
@@ -118,7 +119,7 @@ for kappas in [1.5, 1, 0.5, 0.25]:
     
     scale = 1 #(100/N)
 
-    env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+    env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
                                 kappa = kappas, 
                                 eta = 0.05, 
                                 xi = gen_capacity, c = cost,  
@@ -156,12 +157,12 @@ cost = torch.tensor([0.5, 1.0]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
                             kappa = 0.15, 
-                            eta = 0.1, 
+                            eta = 0.05, 
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 25,
-                            penalty='term_excess')
+                            N = 26,
+                            penalty='diff')
 
 obj = nash_dqn.nash_dqn(env,
                         n_agents=n_agents,

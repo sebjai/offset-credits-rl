@@ -66,8 +66,8 @@ class offset_env():
         X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
         # randomized time 
         t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
-        idx = (torch.rand(batch_size).to(self.dev) < epsilon)
-        t0[idx] = (self.T - self.dt)
+        #idx = (torch.rand(batch_size).to(self.dev) < epsilon)
+        #t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
       
