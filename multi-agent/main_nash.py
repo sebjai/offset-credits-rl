@@ -30,7 +30,7 @@ config={
         'learning_rate': 0.005,
         'gamma': 0.9999,
         'tau':0.075,
-        'sched_step_size': 100,
+        'sched_step_size': 150,
         'n_nodes': 45,
         'n_layers': 3,
 
@@ -64,10 +64,10 @@ np.random.seed(config['random_seed'])
 
 # xi and c have to be vectors of dimension n_agents
 
-n_agents = 1
+n_agents = 3
 
-gen_capacity = torch.tensor([0.5]).to(dev)
-cost = torch.tensor([1.25]).to(dev)
+gen_capacity = torch.tensor([0.2, 0.4, 0.4]).to(dev)
+cost = torch.tensor([0.5, 1.0, 1.0]).to(dev)
 
 env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
                             kappa = 0.1, 
@@ -90,8 +90,8 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=3000, 
-          batch_size=5, 
+obj.train(n_iter=20000, 
+          batch_size=512, 
           n_plot=1000,
           update_type = 'rand_time')
 

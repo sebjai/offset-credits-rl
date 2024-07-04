@@ -248,6 +248,19 @@ class nash_dqn():
         cvar_index = int((1 - confidence_level) * len(signal))
         cvar = np.mean(signal[:cvar_index])
         return cvar
+    
+    def randomize_actions(self, actions, epsilon):
+        rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
+        prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
+        
+        actions[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(actions[:, (rate_idx)].shape).to(self.dev)
+        actions[:, (rate_idx)] = torch.clip(actions[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
+        
+        actions[:, (prob_idx)] += 0.25*epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
+        actions[:, (prob_idx)] = torch.clip(actions[:, (prob_idx)], min = 0, max = 1)
+        
+        return actions
+        
         
     def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
         
@@ -267,14 +280,18 @@ class nash_dqn():
             MU = self.mu['net'](Y)
             
             # randomize actions -- separate randomizations on trade rates and probs
-            rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-            prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
             
-            MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
-            MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
-            
-            MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
-            MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
+            MU = self.randomize_actions(MU, epsilon)
+# =============================================================================
+#             rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
+#             prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
+#             
+#             MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
+#             MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
+#             
+#             MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
+#             MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
+# =============================================================================
             
             #pdb.set_trace()
             
@@ -357,17 +374,17 @@ class nash_dqn():
         MU = self.mu['net'](Y)
             
             # randomize actions -- separate randomizations on trade rates and probs
-        rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-        prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
-            
-        MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
-        MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
-            
-        MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
-        MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
-            
-            #pdb.set_trace()
-            
+        MU = self.randomize_actions(MU, epsilon)
+# =============================================================================
+#             rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
+#             prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
+#             
+#             MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
+#             MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
+#             
+#             MU[:, (prob_idx)] += 0.25*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
+#             MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
+# =============================================================================
             
             #pdb.set_trace()
             
@@ -446,15 +463,15 @@ class nash_dqn():
         # self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
         # self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
-        C = 500
-        D = 1000
+        C = 1000
+        D = 2000
         
         if len(self.epsilon)==0:
             self.count=0
             
         for i in tqdm(range(n_iter)):
             
-            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.02)
+            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.05)
             self.epsilon.append(epsilon)
             self.count += 1
             
