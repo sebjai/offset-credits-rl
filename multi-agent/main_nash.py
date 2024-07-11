@@ -67,7 +67,7 @@ def main(config_inject=dict()):
     run = wandb.init(
         project='nash-dqn',
         entity='offset-credits',
-        name = 'main',
+        name = 'base',
         # hyperparameters and metadata
         config=config,
     )
@@ -147,18 +147,18 @@ def main(config_inject=dict()):
 # Hyperparameter Tuning 
 # 2: Define the search space
 sweep_configuration = {
-    "method": "random",
-    "metric": {"goal": "maximize", "name": "cvar"},
+    "method": "bayes",
+    "metric": {"goal": "maximize", "name": "median"},
     "parameters": {
         "learning_rate": {"max": 0.005, "min": 0.00001},
-        "sched_step_size": {"max": 0.005, "min": 0.00001},
+        "sched_step_size": {"max": 100, "min": 25},
         # "epoch_scale": {"min": 200, "max": 400},
     },
 }
 # sweep setup
 sweep_id = wandb.sweep(sweep=sweep_configuration, project="nash-dqn", entity='offset-credits')
 print(sweep_id)
-wandb.agent(sweep_id, function=main, count=25)
+wandb.agent(sweep_id, function=main, count=50)
 
 
 
