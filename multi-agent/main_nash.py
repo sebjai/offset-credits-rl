@@ -27,24 +27,26 @@ else:
 
 config={
         'random_seed': 252525,
-        'learning_rate': 0.005,
+        'learning_rate': 0.001,
         'gamma': 0.9999,
-        'tau':0.075,
-        'sched_step_size': 100,
-        'n_nodes': 40,
-        'n_layers': 4,
+        'tau':0.05,
+        'sched_step_size': 50,
+        'n_nodes': 36,
+        'n_layers': 3,
 
         # 'global_epochs': 50000,
 
-        'T': 1/12,
-        'S0':2.5,
-        'sigma':0.5, 
-        'kappa': 0.03, 
-        'eta':0.05, 
-        'xi':0.1,
-        'c':0.25,  
-        'R':5, 
-        'pen':2.5
+# =============================================================================
+#         'T': 1/12,
+#         'S0':2.5,
+#         'sigma':0.5, 
+#         'kappa': 0.12, 
+#         'eta':0.075, 
+#         'xi':0.1,
+#         'c':0.25,  
+#         'R':5, 
+#         'pen':2.5
+# =============================================================================
     }
 
 # run = wandb.init(
@@ -66,17 +68,23 @@ np.random.seed(config['random_seed'])
 
 n_agents = 3
 
-gen_capacity = torch.tensor([0.2, 0.4, 0.6]).to(dev)
-cost = torch.tensor([0.5, 1.0, 1.5]).to(dev)
+gen_capacity = torch.tensor([0.5]).to(dev)
+cost = torch.tensor([1.25]).to(dev)
 
-env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
-                            kappa = 0.1, 
+periods = np.array([1/12, 2/12])
+#N is time steps per period... shouldn't do diff with multi-period?? How would it look
+
+gen_capacity = torch.tensor([0.4, 0.3, 0.2]).to(dev)
+cost = torch.tensor([1.0, 0.75, 0.5]).to(dev)
+
+env = offset_env.offset_env(T=periods, S0=2.5, sigma=0.25, 
+                            kappa = 0.15, 
                             eta = 0.05, 
                             xi = gen_capacity, c = cost,  
                             R=5, pen=2.5, 
                             n_agents=n_agents,
-                            N = 26,
-                            penalty='diff',
+                            N = 25,
+                            penalty='terminal',
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
@@ -90,8 +98,8 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=20000, 
-          batch_size=512, 
+obj.train(n_iter=10000, 
+          batch_size=1024, 
           n_plot=5000,
           update_type = 'rand_time')
 

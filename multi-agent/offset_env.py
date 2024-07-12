@@ -14,12 +14,12 @@ import torch
 class offset_env():
 
     def __init__(self, T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
-                     c=0.25, S0=2.5, R=5, pen=2.5, N=51,
+                     c=0.25, S0=2.5, R=5, pen=2.5, N=50,
                      n_agents=2,
                      penalty='terminal', dev=torch.device("cpu")):
         
         self.dev = dev   
-        
+        #vector of period terminus'
         self.T=T
          # trading friction
         self.sigma = sigma
@@ -36,15 +36,16 @@ class offset_env():
         # terminal penalty
         self.pen = pen
         # inventory and trade rate limits
-        self.X_max = 1.5 * R
-        self.nu_max = 100.0
+        self.X_max = (1.2 * R) * self.T.size
+        self.nu_max = 50
         
         self.n_agents=n_agents
         
         self.N = N
-        self.t = np.linspace(0,self.T, self.N)
+        
+        self.t = np.linspace(0,self.T[-1], self.N * self.T.size + 1)
         self.dt = self.t[1]-self.t[0]  # time steps
-        self.inv_vol = self.sigma * np.sqrt(0.5*self.T )
+        self.inv_vol = self.sigma * np.sqrt(0.5*self.T[0] )
         
         self.penalty = penalty
         self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
@@ -65,9 +66,13 @@ class offset_env():
         # Unifrom(0,x_max)
         X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
         # randomized time 
-        t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
-        #idx = (torch.rand(batch_size).to(self.dev) < epsilon)
-        #t0[idx] = (self.T - self.dt)
+        if self.penalty == 'diff':
+            t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
+        else:
+            t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
+            #TODO: figure out how to allow for this with multiple periods...
+            #idx = (torch.rand(batch_size).to(self.dev) < epsilon)
+            #t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
       
@@ -89,15 +94,25 @@ class offset_env():
         
         #pdb.set_trace()
         
+        #TODO:
+            #need to set so it converges to the proper T in the vector
+            #time points are randomized
+            
+        count = 0
         
-        if (self.T - yp[0,0]) < 0:
-            eff_vol = 0
-        else:
-            eff_vol = self.sigma * torch.sqrt((self.dt * (self.T - yp[:,0]) / (self.T - y[:,0])))
+        #pdb.set_trace()
+        
+        T_list = torch.tensor(self.T).to(self.dev)
+        
+        # verify inclusive or exclusive inequality
+        period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>=0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
         
         
-        yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(self.T - yp[:,0])/(self.T-y[:,0]) \
-            + self.dt/(self.T-y[:,0]) * self.pen \
+        eff_vol = self.sigma * torch.sqrt((self.dt * (period - yp[:,0]).clip(min = 0) / (period - y[:,0])))
+        
+        
+        yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(period - yp[:,0]).clip(min = 0)/(period-y[:,0]) \
+            + self.dt/(period-y[:,0]) * self.pen \
                 + eff_vol  * torch.randn(batch_size).to(self.dev)
         
 
@@ -114,25 +129,27 @@ class offset_env():
         
         if self.penalty == 'terminal':
             
-            ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
+                ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
-            if ind_T:
+            
+            #if ind_T:
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                           + self.c * G \
-                              + ind_T * self.terminal_cost(yp[:,2:]) )
+                              + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) )
+                             # + ind_T * self.terminal_cost(yp[:,2:]) )
                     
-            else:
-                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                          + self.c * G )
+            #else:
+               # r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+               #       + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+               #           + self.c * G )
             
                 
         elif self.penalty == 'term_excess':
             
-            ind_T = (torch.abs(yp[0,0]-self.T)<1e-6).int()
+                ind_T = (torch.abs(yp[0,0]-period)<1e-6).int()
             
-            if ind_T:
+            #if ind_T:
                 fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.5))
                     
                 #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
@@ -140,12 +157,13 @@ class offset_env():
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                           + self.c * G ) \
-                              + ind_T * self.term_excess(yp[:,2:], fut_price) 
-            else:
+                            + torch.einsum('ij,i->ij', self.term_excess(yp[:,2:], fut_price), ind_T)
+                           # + ind_T * self.term_excess(yp[:,2:], fut_price) 
+           # else:
             
-                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                          + self.c * G )
+                #r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                 #     + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                 #         + self.c * G )
             
                 
         elif self.penalty == 'diff':

@@ -57,7 +57,7 @@ class ann(nn.Module):
         
         norm = torch.zeros(y.shape).to(self.dev)
         
-        norm[...,0] = self.env.T
+        norm[...,0] = self.env.T[-1]
         norm[...,1] = self.env.S0
         norm[...,2:] = self.env.X_max
             
