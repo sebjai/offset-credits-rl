@@ -10,9 +10,6 @@ from offset_env import offset_env as Environment
 import numpy as np
 import matplotlib.pyplot as plt
 
-import matplotlib
-matplotlib.use('agg')
-
 import torch
 import torch.optim as optim
 import torch.nn as nn
@@ -74,15 +71,26 @@ class nash_dqn():
         
         self.epsilon = []
         self.env = env
-        self.pi['net'].env = env
-        self.pi['net'].nu.env = env
-        self.pi['net'].prob.env = env
-        self.Q_main['net'].env = env
-        self.Q_target['net'].env = env
+        self.mu['net'].env = env
+        self.V_main['net'].env = env
+        self.V_target['net'].env = env
         
-        for g in self.pi['optimizer'].param_groups:
+        for g in range(self.n_agents):
+            self.P[g]['net'].env = env
+            
+            for k in self.P[g]['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+        for g in range(self.n_agents):
+            self.psi[g]['net'].env = env
+            
+            for k in self.psi[g]['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+        
+        for g in self.mu['optimizer'].param_groups:
             g['lr'] = self.lr
-        for g in self.Q_main['optimizer'].param_groups:
+        for g in self.V_main['optimizer'].param_groups:
             g['lr'] = self.lr
         
         
@@ -233,32 +241,73 @@ class nash_dqn():
     def step_optim(self, net):
         net['optimizer'].step()
         net['scheduler'].step()
+    
+    def CVaR(self, data, confidence_level = 0.95):
+        # Set the desired confidence level
+        signal = sorted(data)
+        cvar_index = int((1 - confidence_level) * len(signal))
+        cvar = np.mean(signal[:cvar_index])
+        return cvar
+    
+    def randomize_actions(self, actions, epsilon):
+        
+        rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
+        prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
+        
+        actions[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(actions[:, (rate_idx)].shape).to(self.dev)
+        actions[:, (rate_idx)] = torch.clip(actions[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
+        
+        actions[:, (prob_idx)] += 0.3*epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
+        actions[:, (prob_idx)] = torch.clip(actions[:, (prob_idx)], min = 0, max = 1)
+        
+        return actions
+    
+    def update_nets(self, update):
+        
+        if update =='V':
+            self.step_optim(self.V_main)
+            
+        elif update == 'mu':
+            self.step_optim(self.mu)
+            
+        elif update == 'A':
+            for k in range(self.n_agents):
+                self.step_optim(self.P[k])
+                self.step_optim(self.psi[k])
+                
+        elif update =='all':
+            
+            self.step_optim(self.V_main)
+            self.step_optim(self.mu)
+            
+            for k in range(self.n_agents):
+                self.step_optim(self.P[k])
+                self.step_optim(self.psi[k])
+                
+        
         
     def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
         t = 0*t # start at time zero
-        # X = 0*X # start with 0 inventory ? 
+        #X = 0*X # start with 0 inventory ? 
+     
         
         Y = self.__stack_state__(t, S, X)
-        
-        for i in range(self.env.N-1):
+        #pdb.set_trace()
+        for i in range(self.env.N*self.env.T.size):
             
-            #
+            
+            #pdb.set_trace()
             # get actions
             MU = self.mu['net'](Y)
             
             # randomize actions -- separate randomizations on trade rates and probs
-            rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
-            prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
             
-            MU[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(MU[:, (rate_idx)].shape).to(self.dev)
-            MU[:, (rate_idx)] = torch.clip(MU[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
+            MU = self.randomize_actions(MU, epsilon)
             
-            MU[:, (prob_idx)] += 0.1*epsilon * torch.randn(MU[:, (prob_idx)].shape).to(self.dev)
-            MU[:, (prob_idx)] = torch.clip(MU[:, (prob_idx)], min = 0, max = 1)
-            
+            #pdb.set_trace()
             
             Yp, r = self.env.step(Y, MU)
             
@@ -276,7 +325,7 @@ class nash_dqn():
                 dmu = MU_r[k]-mu[k]
                 A.append(- torch.einsum('...i,...ij,...j->...', dmu, P[k] , dmu) \
                          + torch.einsum('...i,...i->...', dmu[:,2:], psi[k]) )
-                    
+                                    
                 dmu_p = mu_p[k] - mu_p[k].detach()
                 Ap.append(- torch.einsum('...i,...ij,...j->...', dmu_p, P_p[k] , dmu_p) \
                          + torch.einsum('...i,...i->...', dmu_p[:,2:], psi_p[k]) )
@@ -295,53 +344,135 @@ class nash_dqn():
             
             self.VA_loss.append(loss.item())
             
-            if update =='V':
-                self.step_optim(self.V_main)
-            elif update == 'mu':
-                self.step_optim(self.mu)
-            elif update == 'A':
-                for k in range(self.n_agents):
-                    self.step_optim(self.P[k])
-                    self.step_optim(self.psi[k])
-            elif update =='all':
-                self.step_optim(self.V_main)
-                self.step_optim(self.mu)
-                for k in range(self.n_agents):
-                    self.step_optim(self.P[k])
-                    self.step_optim(self.psi[k])
-                    
+            self.update_nets(update)
+            
+# =============================================================================
+#             if update =='V':
+#                 
+#                 self.step_optim(self.V_main)
+#                 
+#             elif update == 'mu':
+#                 self.step_optim(self.mu)
+#                 
+#             elif update == 'A':
+#                 for k in range(self.n_agents):
+#                     self.step_optim(self.P[k])
+#                     self.step_optim(self.psi[k])
+#                     
+#             elif update =='all':
+#                 
+#                 self.step_optim(self.V_main)
+#                 self.step_optim(self.mu)
+#                 
+#                 for k in range(self.n_agents):
+#                     self.step_optim(self.P[k])
+#                     self.step_optim(self.psi[k])
+#                     
+# =============================================================================
             Y = copy.copy(Yp.detach())
             
             # soft update main >> target
             
             self.soft_update(self.V_main['net'], self.V_target['net'])
             
+    
+    def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
         
+        t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
+        
+        Y = self.__stack_state__(t, S, X)
+        #pdb.set_trace()
+        
+            
+            
+            #pdb.set_trace()
+            # get actions
+        MU = self.mu['net'](Y)
+            
+            # randomize actions -- separate randomizations on trade rates and probs
+        MU = self.randomize_actions(MU, epsilon)
+            #pdb.set_trace()
+            
+        Yp, r = self.env.step(Y, MU)
+            
+        mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp)
+            
+            
+        # ADD IN REPLAY BUFFER AND SAMPLING FROM IT
+            
+        MU_r = self.reorder_actions(MU)
+            
+        A = []
+        Ap = []
+            
+        for k in range(self.n_agents):
+            dmu = MU_r[k]-mu[k]
+            A.append(- torch.einsum('...i,...ij,...j->...', dmu, P[k] , dmu) \
+                     + torch.einsum('...i,...i->...', dmu[:,2:], psi[k]) )
+                                    
+            dmu_p = mu_p[k] - mu_p[k].detach()
+            Ap.append(- torch.einsum('...i,...ij,...j->...', dmu_p, P_p[k] , dmu_p) \
+                      + torch.einsum('...i,...i->...', dmu_p[:,2:], psi_p[k]) )
+            
+            
+        done = 1.0 * (torch.abs(Yp[:,0] - self.env.T[-1]) <= 1e-6)
+        
+        loss = 0
+        #pdb.set_trace()
+        for k in range(self.n_agents):
+            loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
+                                - ( 1 - done) * self.gamma * (Vp[:,k].detach() - Ap[k].detach()) )**2  )
+                
+        self.zero_grad()
+            
+        loss.backward()
+            
+        self.VA_loss.append(loss.item())
+        
+        self.update_nets(update)
+            
+        
+        Y = copy.copy(Yp.detach())
+            
+        # soft update main >> target
+            
+        self.soft_update(self.V_main['net'], self.V_target['net'])
+            
+            
+    
+    
     def train(self, n_iter=1_000, 
               batch_size=256, 
-              n_plot=100):
+              n_plot=100,
+              update_type = 'linear'):
         
         # self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
         # self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
-
-        C = 500
-        D = 1000
+                
+        C = 2000
+        D = 4000
         
         if len(self.epsilon)==0:
             self.count=0
-        
-        # pdb.set_trace
+            
         for i in tqdm(range(n_iter)):
             
-            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.02)
+            
+            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.05)
             self.epsilon.append(epsilon)
             self.count += 1
             
+            if update_type == 'linear':
 
-            #  self.update(batch_size=batch_size, epsilon=epsilon, update='all')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='V')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='A')
-            self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
+                #  self.update(batch_size=batch_size, epsilon=epsilon, update='all')
+                self.update(batch_size=batch_size, epsilon=epsilon, update='V')
+                self.update(batch_size=batch_size, epsilon=epsilon, update='A')
+                self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
+                
+            else:
+                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='V')
+                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='A')
+                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='mu')
             
             # if i == 1:
             #     pdb.set_trace()
@@ -349,7 +480,7 @@ class nash_dqn():
             if np.mod(i+1,n_plot) == 0:
                 
                 self.loss_plots()
-                self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
+                self.run_strategy(1000, name= datetime.now().strftime("%H_%M_%S"))
                 
                 if self.n_agents == 1:
                     self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
@@ -401,7 +532,6 @@ class nash_dqn():
         
         plt.tight_layout()
         # plt.show()
-        return plt.gcf()
         
     # TODO: Update run_strategy and the plots
     
@@ -412,33 +542,40 @@ class nash_dqn():
         if N is None:
             N = self.env.N
         
-        S = torch.zeros((nsims, N)).float().to(self.dev)
-        X = torch.zeros((nsims, self.n_agents, N)).float().to(self.dev)
-        a = torch.zeros((nsims, (2 * self.n_agents), N-1)).float().to(self.dev)
-        r = torch.zeros((nsims, self.n_agents, N-1)).float().to(self.dev)
+        S = torch.zeros((nsims, N * self.env.T.size + 1)).float().to(self.dev)
+        X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
+        r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
 
+        
+        #pdb.set_trace()
 
         S[:,0] = self.env.S0
         X[:,:,0] = 0
         
         ones = torch.ones(nsims).to(self.dev)
         
+        #pdb.set_trace()
 
-        for k in range(N-1):
+        for k in range(N * self.env.T.size):
+            
+            
             
             Y = self.__stack_state__(self.env.t[k]* ones ,S[:,k], X[:,:,k])
 
             # normalize : Y (tSX)
             # get policy
             
-            #self.mu is returning NaN on everything
-            
             a[:,:,k] = self.mu['net'](Y)
 
             # step in environment
+            
+            #pdb.set_trace()
+            
             Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0)
             
-        
+           # pdb.set_trace()
+            
             # update subsequent state and inventory
             S[:, k+1] = Y_p[:,1]
             X[:,:, k+1] = Y_p[:,2:]
@@ -488,23 +625,42 @@ class nash_dqn():
 
         plt.subplot(2, 3, 6)
         
-        naive_pen = self.env.pen*self.env.R
         
         #pdb.set_trace()
         
         #need to determine PnL shape for histograms of players...
         
-        if self.env.penalty =='terminal':
+        if self.env.penalty in ('terminal', 'term_excess'):
+            
             PnL = np.sum(r,axis=2)
+            
         elif self.env.penalty =='diff':
+            
+            naive_pen = self.env.pen * self.env.R * self.T.size
             PnL = np.sum(r,axis=2) - naive_pen
             
         for ag in range(self.n_agents):
-            pnl_ag = PnL[:,ag]
-            qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
-            plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 51), density=True, color = colors[ag], alpha = 0.6)
-            print("\nAgent" , (ag+1) ,"mean:" , qtl[1])
             
+            pnl_ag = PnL[:,ag]
+            
+            qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
+            
+            cvar = self.CVaR(pnl_ag, confidence_level = 0.95)
+            #         
+            plt.hist(pnl_ag, bins=np.linspace(qtl[0], qtl[-1], 51), density=True, color = colors[ag], alpha = 0.6)
+            print("\n")
+            print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
+            
+        #plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
+        #plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
+        
+        
+        #plt.xlim(qtl[0], qtl[-1])
+            #   
+            
+        plt.tight_layout()
+            
+        
 # =============================================================================
 #             
 #         qtl = np.quantile(PnL,[0.005, 0.5, 0.995])
@@ -514,31 +670,25 @@ class nash_dqn():
 #         plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
 #         plt.xlim(qtl[0], qtl[-1])
 #         
+#         plt.tight_layout()
 # =============================================================================
         
-        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
-        # plt.show()   
+       # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
+        plt.show()   
         
-        # t = 1.0* self.env.t
+        t = 1.0* self.env.t
         
         # return t, S, X, a, r
 # =============================================================================
+#         performance = dict()
+#         performance['PnL'] = PnL
+#         performance['median'] = qtl[1]
+#         performance['cvar'] = self.CVaR(PnL)
+#         performance['mean'] = PnL.mean()
+# 
+# =============================================================================
+        return plt.gcf() #, performance
 
-        performance = dict()
-        performance['PnL'] = PnL
-        performance['median'] = qtl[1]
-        performance['cvar'] = self.CVaR(PnL)
-        performance['mean'] = PnL.mean()
-
-        plt.tight_layout()
-        return plt.gcf(), performance
-
-    def CVaR(self, data, confidence_level = 0.95):
-        # Set the desired confidence level
-        signal = sorted(data)
-        cvar_index = int((1 - confidence_level) * len(signal))
-        cvar = np.mean(signal[:cvar_index])
-        return cvar
     
     def plot_policy(self, name=""):
         '''
@@ -548,11 +698,11 @@ class nash_dqn():
 
         '''
         
-        NS = 51
-        S = torch.linspace(self.env.S0-3*self.env.inv_vol,
-                           self.env.S0+3*self.env.inv_vol, NS).to(self.dev)
+        NS = 75
+        S = torch.linspace(self.env.S0-5*self.env.inv_vol,
+                           self.env.S0+5*self.env.inv_vol, NS).to(self.dev)
         
-        NX = 51
+        NX = 75
         X = torch.linspace(-1, self.env.X_max, NX).to(self.dev)
         
         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
@@ -562,8 +712,8 @@ class nash_dqn():
         def plot(k, lvls, title):
             
             # plot 
-            t_steps = np.linspace(0, self.env.T, 9)
-            t_steps[-1] = (self.env.T - self.env.dt)
+            t_steps = np.linspace(0, self.env.T[-1], 9)
+            t_steps[-1] = (self.env.T[-1] - self.env.dt)
             
             n_cols = 3
             n_rows = int(np.floor(len(t_steps)/n_cols)+1)
@@ -607,7 +757,7 @@ class nash_dqn():
                 
             plt.tight_layout()
             
-            # plt.show()
+            plt.show()
             
             return fig
         

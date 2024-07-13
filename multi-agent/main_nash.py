@@ -14,8 +14,6 @@ from PIL import Image
 import numpy as np
 import sys
 import torch
-import pandas as pd
-import pdb
 
 #%%
 if torch.cuda.is_available():  
@@ -25,144 +23,263 @@ else:
 
 
 #%%
-wandb.login()
+#wandb.login()
 
-def main(config_inject=dict()):
-    config={
-            'n_agents': 1,
+config={
+        'random_seed': 252525,
+        'learning_rate': 0.001,
+        'gamma': 0.9999,
+        'tau':0.05,
+        'sched_step_size': 50,
+        'n_nodes': 36,
+        'n_layers': 3,
 
-            # hyperparametrs
-            'random_seed': 3005,
-            'learning_rate': 0.0002,
-            'gamma': 0.9999,
-            'tau':0.05,
-            'sched_step_size': 50,
-            'n_nodes': 36,
-            'n_layers': 3,
+        # 'global_epochs': 50000,
 
-            'epoch_scale': 250,
-            'batch_size': 512,
-            'n_plots': 1000,
+# =============================================================================
+#         'T': 1/12,
+#         'S0':2.5,
+#         'sigma':0.5, 
+#         'kappa': 0.12, 
+#         'eta':0.075, 
+#         'xi':0.1,
+#         'c':0.25,  
+#         'R':5, 
+#         'pen':2.5
+# =============================================================================
+    }
 
-            # parameters
-            'T': 1/12,
-            'S0':2.5,
-            'sigma':0.5, 
-            'kappa': 0.03, 
-            'eta':0.05, 
-            # generation capacity
-            'xi': torch.tensor([2*0.5]).to(dev),
-            # cost of generation
-            'c':torch.tensor([2*1.25]).to(dev),
-            # requirement
-            'R':5, 
-            # unit terminal penalty
-            'pen':2.5,
-            # penalty type
-            'penalty': "diff",
+# run = wandb.init(
+#     project='offset credit rl',
+#     # entity='offset-credits',
+#     # name = 'base',
+#     # Track hyperparameters and run metadata
+#     config=config,
+# )
 
-            **config_inject
-        }
-
-    run = wandb.init(
-        project='nash-dqn',
-        entity='offset-credits',
-        name = 'base',
-        # hyperparameters and metadata
-        config=config,
-    )
-
-    # set seeds
-    torch.manual_seed(wandb.config['random_seed'])
-    np.random.seed(wandb.config['random_seed'])
+# set seeds
+torch.manual_seed(config['random_seed'])
+np.random.seed(config['random_seed'])
 
 
-    #%%
+#%%
 
-    # xi and c have to be vectors of dimension n_agents
+# xi and c have to be vectors of dimension n_agents
 
-    N = 11
+n_agents = 3
 
-    gen_capacity = torch.tensor([2*0.5]).to(dev)
-    cost = torch.tensor([2*1.25]).to(dev)
+gen_capacity = torch.tensor([0.5]).to(dev)
+cost = torch.tensor([1.25]).to(dev)
 
-    env = offset_env.offset_env(
-                                N = 11,
-                                T=wandb.config['T'], S0=wandb.config['S0'], sigma=wandb.config['sigma'], 
-                                kappa = wandb.config['kappa'], eta = wandb.config['eta'],  
-                                xi = config['xi'], c = config['c'],  
-                                R=wandb.config['R'], pen=wandb.config['pen'], 
-                                n_agents=wandb.config['n_agents'],
-                                penalty=wandb.config['penalty'],
-                                dev=dev)
+periods = np.array([1/12, 2/12])
+#N is time steps per period... shouldn't do diff with multi-period?? How would it look
 
-    obj = nash_dqn.nash_dqn(env,
-                            n_agents=wandb.config['n_agents'],
-                            gamma = wandb.config['gamma'], 
-                            lr = wandb.config['learning_rate'],
-                            tau = wandb.config['tau'],
-                            sched_step_size=wandb.config['sched_step_size'],
-                            name="test", n_nodes=wandb.config['n_nodes'], n_layers=wandb.config['n_layers'],
+gen_capacity = torch.tensor([0.4, 0.3, 0.2]).to(dev)
+cost = torch.tensor([1.0, 0.75, 0.5]).to(dev)
+
+env = offset_env.offset_env(T=periods, S0=2.5, sigma=0.25, 
+                            kappa = 0.15, 
+                            eta = 0.05, 
+                            xi = gen_capacity, c = cost,  
+                            R=5, pen=2.5, 
+                            n_agents=n_agents,
+                            N = 25,
+                            penalty='terminal',
                             dev=dev)
 
-
-    obj.train(n_iter=wandb.config['epoch_scale'] * N, 
-              batch_size=wandb.config['batch_size'], 
-              n_plot=wandb.config['n_plots'])
-
-    # log performance 
-    eval_fig, performance = obj.run_strategy(nsims=1000)
-    trade_fig, gen_fig = obj.plot_policy()
-    loss_fig = obj.loss_plots()
-
-    eval_buf = io.BytesIO()
-    trade_buf = io.BytesIO()
-    gen_buf = io.BytesIO()
-    loss_buf = io.BytesIO()
-
-    eval_fig.savefig(eval_buf, format='png', bbox_inches='tight')
-    trade_fig.savefig(trade_buf, format='png', bbox_inches='tight')
-    gen_fig.savefig(gen_buf, format='png', bbox_inches='tight')
-    loss_fig.savefig(loss_buf, format='png', bbox_inches='tight')
-
-    eval_buf.seek(0)
-    trade_buf.seek(0)
-    gen_buf.seek(0)
-    loss_buf.seek(0)
-
-    wandb.log({'strategy_evaluation': wandb.Image(Image.open(eval_buf)),
-               'trading_strategy': wandb.Image(Image.open(trade_buf)),
-               'generation_strategy': wandb.Image(Image.open(gen_buf)),
-               'training_loss': wandb.Image(Image.open(loss_buf)),
-               **performance})
-
-    dill.dump(obj, open(f'trained_{N}.pkl', "wb"))
-    run.log_model(path='./'+ 'trained_' + str(N) + '.pkl', name=f'chkpt_{N}')
-
-    wandb.finish()    
-
-
-# main()
-
-# Hyperparameter Tuning 
-# 2: Define the search space
-sweep_configuration = {
-    "method": "bayes",
-    "metric": {"goal": "maximize", "name": "median"},
-    "parameters": {
-        "learning_rate": {"max": 0.005, "min": 0.00001},
-        "sched_step_size": {"max": 100, "min": 25},
-        # "epoch_scale": {"min": 200, "max": 400},
-    },
-}
-# sweep setup
-sweep_id = wandb.sweep(sweep=sweep_configuration, project="nash-dqn", entity='offset-credits')
-print(sweep_id)
-wandb.agent(sweep_id, function=main, count=50)
+obj = nash_dqn.nash_dqn(env,
+                        n_agents=n_agents,
+                        gamma = config['gamma'], 
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
+                        dev=dev)
 
 
 
-# Load and Run Model
+obj.train(n_iter=10000, 
+          batch_size=1024, 
+          n_plot=5000,
+          update_type = 'rand_time')
+
+
+#%%
+
+# =============================================================================
+# env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+#                             kappa = 1, 
+#                             eta = 0.05, 
+#                             xi = gen_capacity, c = cost,  
+#                             R=5, pen=2.5, 
+#                             n_agents=n_agents,
+#                             N = 26,
+#                             penalty='diff',
+#                             dev=dev)
+# 
+#  
+# =============================================================================
+
+for kappas in [1.5, 1, 0.5, 0.25]:
+
+    print("\n***************************************")
+    print("kappa=" + str(kappas))
+    
+    scale = 1 #(100/N)
+
+    env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
+                                kappa = kappas, 
+                                eta = 0.05, 
+                                xi = gen_capacity, c = cost,  
+                                R=5, pen=2.5, 
+                                n_agents=n_agents,
+                                N = 26,
+                                penalty='diff',
+                                dev=dev)
+    
+    obj.reset(env)    
+    
+    obj = nash_dqn.nash_dqn(env,
+                            n_agents=n_agents,
+                            gamma = config['gamma'], 
+                            lr = config['learning_rate'],
+                            tau = config['tau'],
+                            sched_step_size=config['sched_step_size'],
+                            name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
+                            dev=dev)
+    
+    obj.train(n_iter=1000, 
+              batch_size=512, 
+              n_plot=1000)
+
+    # log performance
+   
+dill.dump(obj, open('trained_kappa' + '.pkl', "wb"))
+
+ #%%
+ 
+n_agents = 2
+
+gen_capacity = torch.tensor([0.2, 0.4]).to(dev)
+cost = torch.tensor([0.5, 1.0]).to(dev)
+
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                            kappa = 0.15, 
+                            eta = 0.05, 
+                            xi = gen_capacity, c = cost,  
+                            R=5, pen=2.5, 
+                            n_agents=n_agents,
+                            N = 26,
+                            penalty='diff')
+
+obj = nash_dqn.nash_dqn(env,
+                        n_agents=n_agents,
+                        gamma = config['gamma'], 
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
+
+
+
+obj.train(n_iter=3000, 
+          batch_size=512, 
+          n_plot=1000) 
+ 
+ 
+ 
+ 
+ 
+ #%%
+ 
+n_agents = 4
+
+gen_capacity = torch.tensor([0.2, 0.2, 0.4, 0.4]).to(dev)
+cost = torch.tensor([0.5, 0.5, 1, 1]).to(dev)
+
+env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
+                            kappa = 0.03, 
+                            eta = 0.05, 
+                            xi = gen_capacity, c = cost,  
+                            R=5, pen=2.5, 
+                            n_agents=n_agents,
+                            N = 50,
+                            penalty='diff')
+
+obj = nash_dqn.nash_dqn(env,
+                        n_agents=n_agents,
+                        gamma = config['gamma'], 
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
+
+
+
+obj.train(n_iter=1_000, 
+          batch_size=256, 
+          n_plot=100)  
+ 
+ 
+ 
+ 
+ 
+ 
+#%%    
+# # try some transfer learning -- learn with various values of N
+# # starting from the optimal from the previous value of N
+# for N in [10, 25, 50, 100]:
+
+#     print("\n***************************************")
+#     print("N=" + str(N))
+    
+#     wandb.config.update({'N': N}, allow_val_change=True)
+#     wandb.config.update({'global_epochs': config['epoch_scale'] * N}, allow_val_change=True)
+#     scale = 1 #(100/N)
+
+#     env = offset_env.offset_env(T=config['T'], S0=config['S0'], sigma=config['sigma'], 
+#                                 kappa = config['kappa'], 
+#                                 eta = config['eta'], 
+#                                 xi=config['xi']*scale, c=scale*config['c'],  
+#                                 R=config['R'], pen=config['pen'], 
+#                                 N = N,
+#                                 penalty='diff')
+    
+#     ddpg.reset(env)    
+    
+#     ddpg.train(n_iter = config['epoch_scale'] * N, 
+#                n_plot = config['n_plots'], 
+#                batch_size = config['batch_size'], 
+#                n_iter_Q=config['Q_epochs'], n_iter_pi=config['pi_epochs'])
+
+#     # log performance 
+#     eval_fig, performance = ddpg.run_strategy(nsims=1000)
+#     trade_fig, gen_fig = ddpg.plot_policy()
+
+#     eval_buf = io.BytesIO()
+#     trade_buf = io.BytesIO()
+#     gen_buf = io.BytesIO()
+    
+#     eval_fig.savefig(eval_buf, format='png', bbox_inches='tight')
+#     trade_fig.savefig(trade_buf, format='png', bbox_inches='tight')
+#     gen_fig.savefig(gen_buf, format='png', bbox_inches='tight')
+
+#     eval_buf.seek(0)
+#     trade_buf.seek(0)
+#     gen_buf.seek(0)
+
+#     wandb.log({'strategy_evaluation': wandb.Image(Image.open(eval_buf)),
+#                'trading_strategy': wandb.Image(Image.open(trade_buf)),
+#                'generation_strategy': wandb.Image(Image.open(gen_buf)),
+#                **performance})
+
+    
+#     dill.dump(ddpg, open('trained_' + str(N) + '.pkl', "wb"))
+#     run.log_model(path='./'+ 'trained_' + str(N) + '.pkl', name=f'chkpt_{N}')
+
+# wandb.finish()
+    
+
 # from datetime import datetime
 # with open('trained_100.pkl', 'rb') as in_strm:
 #     ddpg_loaded = dill.load(in_strm)
