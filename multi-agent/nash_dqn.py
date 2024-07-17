@@ -71,28 +71,37 @@ class nash_dqn():
         
         self.epsilon = []
         self.env = env
-        self.mu['net'].env = env
-        self.V_main['net'].env = env
-        self.V_target['net'].env = env
+        #self.mu['net'].env = env
+        #self.V_main['net'].env = env
+        #self.V_target['net'].env = env
         
         for g in range(self.n_agents):
             self.P[g]['net'].env = env
+            self.psi[g]['net'].env = env
+            self.V_main[g]['net'].env = env
+            self.mu[g]['net'].env = env
+            self.V_target[g]['net'].env = env
             
             for k in self.P[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
-            
-        for g in range(self.n_agents):
-            self.psi[g]['net'].env = env
-            
+                
             for k in self.psi[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
             
-        
-        for g in self.mu['optimizer'].param_groups:
-            g['lr'] = self.lr
-        for g in self.V_main['optimizer'].param_groups:
-            g['lr'] = self.lr
-        
+            for k in self.V_main[g]['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+            for k in self.mu[g]['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+# =============================================================================
+#         
+#         for g in self.mu['optimizer'].param_groups:
+#             g['lr'] = self.lr
+#         for g in self.V_main['optimizer'].param_groups:
+#             g['lr'] = self.lr
+#         
+# =============================================================================
         
     def __initialize_NNs__(self):
         
@@ -106,25 +115,6 @@ class nash_dqn():
             
             return {'net' : net, 'optimizer' : optimizer, 'scheduler' : scheduler}
         
-        # value network
-        #   features are t, S,X
-        #   output = value
-        self.V_main = create_net(n_in=2+self.n_agents, n_out=self.n_agents, n_nodes=32, n_layers=3)
-        # self.V_main = []
-        # for k in range(self.n_agents):
-        #     self.V_main.append(create_net(n_in=3, n_out=1, n_nodes=32, n_layers=3))
-        self.V_target = copy.copy(self.V_main)
-            
-        # policy approximation for mu =( nu and prob)
-        #   features are t, S,X
-        #   output = (rates_k, prob_k) k = 1,..K
-        self.mu = create_net(n_in = (2 + self.n_agents), n_out = (2 * self.n_agents), n_nodes=32, n_layers=3,
-                             out_activation=[lambda x : self.env.nu_max * torch.tanh(x),
-                                             lambda x : torch.sigmoid(x)])
-        
-        # positive definite ann
-        #   features are t, S,X
-        #   output = batch x 2K x 2K 
         def create_posdef_net(n_in, n_agents, n_nodes, n_layers):
             net = posdef_ann(n_in, n_agents, n_nodes, n_layers, env=self.env, dev=self.dev).to(self.dev)
             optimizer, scheduler = self.__get_optim_sched__(net)
@@ -133,16 +123,60 @@ class nash_dqn():
             
             return result
         
-        self.P = []
-        for k in range(self.n_agents):
-            self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
+        # value network
+        #   features are t, S,X
+        #   output = value
+        
+        # policy approximation for mu =( nu and prob)
+        #   features are t, S,X
+        #   output = (rates_k, prob_k) k = 1,..K
         
         # shift ann psi
         #   features are t, S,X
         #   output = batch x (K-1)
+        
+        self.P = []
+        
         self.psi = []
+        
+        self.V_main = []
+        
+        self.mu = []
+        
+        self.V_target = []
+        
         for k in range(self.n_agents):
+            self.V_main.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3))
+            
+            self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
+                                 out_activation=[lambda x : self.env.nu_max * torch.tanh(x),
+                                                 lambda x : torch.sigmoid(x)]))
+            
+            self.V_target.append(copy.copy(self.V_main[k]))
+            
             self.psi.append(create_net(n_in=(2 + self.n_agents), n_out= (2 * (self.n_agents - 1)), n_nodes=32, n_layers=3))
+            
+            self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
+
+        
+        #self.V_target = copy.copy(self.V_main)
+        
+        #self.V_main = create_net(n_in=2+self.n_agents, n_out=self.n_agents, n_nodes=32, n_layers=3)
+        
+            
+        
+        #self.mu = create_net(n_in = (2 + self.n_agents), n_out = (2 * self.n_agents), n_nodes=32, n_layers=3,
+         #                    out_activation=[lambda x : self.env.nu_max * torch.tanh(x),
+          #                                   lambda x : torch.sigmoid(x)])
+        
+        
+        #self.P = []
+        #for k in range(self.n_agents):
+        #    self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
+        
+       
+        #for k in range(self.n_agents):
+        #    self.psi.append(create_net(n_in=(2 + self.n_agents), n_out= (2 * (self.n_agents - 1)), n_nodes=32, n_layers=3))
         
     def __get_optim_sched__(self, net):
         
@@ -185,17 +219,55 @@ class nash_dqn():
         if test=='prob':
             if torch.amin(x) < 0 or torch.amax(x) > 1:
                 print(torch.amin(x), torch.amax(x))
- 
-           
-    def get_value_advantage_mu(self, Y, Yp):
+                
+    def get_actions(self, Y, batch_size):
+        
+        MU = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
+        
+        for k in range(self.n_agents):
+            
+            MU[...,(2*k):((2*k)+2)] = self.mu[k]['net'](Y)
+            
+        return MU
+            
+    def get_value(self, Y, batch_size):
+        
+        Val = torch.zeros([batch_size, self.n_agents]).to(self.dev)
+        
+        for k in range(self.n_agents):
+            
+            #pdb.set_trace()
+            
+            Val[...,k:(k+1)] = self.V_main[k]['net'](Y)
+            
+        return Val
+            
+    def get_target(self, Y, batch_size):
+        
+        targ = torch.zeros([batch_size, self.n_agents]).to(self.dev)
+        
+        for k in range(self.n_agents):
+            
+            targ[...,k:(k+1)] = self.V_target[k]['net'](Y)
+            
+        return targ
+            
+    def get_value_advantage_mu(self, Y, Yp, batch_size):
         
         # Y = (t, S, X_1,..., X_K)
         
-        MU = self.mu['net'](Y)
-        MUp = self.mu['net'](Yp)
+        #MU = self.mu['net'](Y)
+        #MUp = self.mu['net'](Yp)
         
-        V = self.V_main['net'](Y)
-        Vp = self.V_target['net'](Yp)
+        MU = self.get_actions(Y, batch_size)
+        MUp = self.get_actions(Yp, batch_size)
+        
+        #V = self.V_main['net'](Y)
+        #Vp = self.V_target['net'](Yp)
+        
+        V = self.get_value(Y, batch_size)
+        Vp = self.get_target(Yp, batch_size)
+        
         
         P  = []
         psi = []
@@ -237,8 +309,8 @@ class nash_dqn():
             self.P[k]['optimizer'].zero_grad()
             self.psi[k]['optimizer'].zero_grad()
             
-        self.mu['optimizer'].zero_grad()
-        self.V_main['optimizer'].zero_grad()        
+            self.mu[k]['optimizer'].zero_grad()
+            self.V_main[k]['optimizer'].zero_grad()        
         
     def step_optim(self, net):
         net['optimizer'].step()
@@ -267,10 +339,12 @@ class nash_dqn():
     def update_nets(self, update):
         
         if update =='V':
-            self.step_optim(self.V_main)
+            for k in range(self.n_agents):
+                self.step_optim(self.V_main[k])
             
         elif update == 'mu':
-            self.step_optim(self.mu)
+            for k in range(self.n_agents):
+                self.step_optim(self.mu[k])
             
         elif update == 'A':
             for k in range(self.n_agents):
@@ -303,7 +377,7 @@ class nash_dqn():
             
             #pdb.set_trace()
             # get actions
-            MU = self.mu['net'](Y)
+            MU = self.get_actions(Y, batch_size)
             
             # randomize actions -- separate randomizations on trade rates and probs
             
@@ -375,7 +449,8 @@ class nash_dqn():
             
             # soft update main >> target
             
-            self.soft_update(self.V_main['net'], self.V_target['net'])
+            for k in range(self.n_agents):
+                self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
     
     def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
@@ -383,21 +458,18 @@ class nash_dqn():
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
         Y = self.__stack_state__(t, S, X)
-        #pdb.set_trace()
+
+        # get actions
+        #MU = self.mu['net'](Y)
         
+        MU = self.get_actions(Y, batch_size)
             
-            
-            #pdb.set_trace()
-            # get actions
-        MU = self.mu['net'](Y)
-            
-            # randomize actions -- separate randomizations on trade rates and probs
+        # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
-            #pdb.set_trace()
             
         Yp, r = self.env.step(Y, MU)
             
-        mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp)
+        mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
             
         # ADD IN REPLAY BUFFER AND SAMPLING FROM IT
@@ -441,7 +513,9 @@ class nash_dqn():
             
         # soft update main >> target
             
-        self.soft_update(self.V_main['net'], self.V_target['net'])
+        
+        for k in range(self.n_agents):
+            self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
             
     
@@ -571,7 +645,7 @@ class nash_dqn():
             # normalize : Y (tSX)
             # get policy
             
-            a[:,:,k] = self.mu['net'](Y)
+            a[:,:,k] = self.get_actions(Y, nsims)
 
             # step in environment
             
