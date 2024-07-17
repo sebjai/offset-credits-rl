@@ -27,26 +27,13 @@ else:
 
 config={
         'random_seed': 252525,
-        'learning_rate': 0.001,
+        'learning_rate': 0.00005,
         'gamma': 0.9999,
         'tau':0.05,
-        'sched_step_size': 50,
-        'n_nodes': 36,
+        'sched_step_size': 100,
+        'n_nodes': 72,
         'n_layers': 3,
 
-        # 'global_epochs': 50000,
-
-# =============================================================================
-#         'T': 1/12,
-#         'S0':2.5,
-#         'sigma':0.5, 
-#         'kappa': 0.12, 
-#         'eta':0.075, 
-#         'xi':0.1,
-#         'c':0.25,  
-#         'R':5, 
-#         'pen':2.5
-# =============================================================================
     }
 
 # run = wandb.init(
@@ -58,30 +45,32 @@ config={
 # )
 
 # set seeds
+
 torch.manual_seed(config['random_seed'])
 np.random.seed(config['random_seed'])
 
 
-#%%
-
 # xi and c have to be vectors of dimension n_agents
 
-n_agents = 3
+n_agents = 2
 
 gen_capacity = torch.tensor([0.5]).to(dev)
 cost = torch.tensor([1.25]).to(dev)
 
-periods = np.array([1/12, 2/12])
+periods = np.array([1/12, 2/12, 3/12])
 #N is time steps per period... shouldn't do diff with multi-period?? How would it look
 
-gen_capacity = torch.tensor([0.4, 0.3, 0.2]).to(dev)
-cost = torch.tensor([1.0, 0.75, 0.5]).to(dev)
+gen_capacity = torch.tensor([0.5, 0.25]).to(dev)
+cost = torch.tensor([1.25, 0.625]).to(dev)
+
+# either is one element or n_agents length, allows for different requirements
+Req = torch.tensor([5, 4]).to(dev)
 
 env = offset_env.offset_env(T=periods, S0=2.5, sigma=0.25, 
                             kappa = 0.15, 
                             eta = 0.05, 
                             xi = gen_capacity, c = cost,  
-                            R=5, pen=2.5, 
+                            R=Req, pen=2.5, 
                             n_agents=n_agents,
                             N = 25,
                             penalty='terminal',
@@ -98,9 +87,9 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=10000, 
+obj.train(n_iter=5000, 
           batch_size=1024, 
-          n_plot=5000,
+          n_plot=1000,
           update_type = 'rand_time')
 
 

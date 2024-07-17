@@ -217,6 +217,8 @@ class nash_dqn():
             
     def reorder_actions(self, MU):
         
+        #pdb.set_trace()
+        
         mu =[]
         for k in range(self.n_agents):
             mu.append(torch.zeros(MU.shape).to(self.dev))
@@ -257,7 +259,7 @@ class nash_dqn():
         actions[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(actions[:, (rate_idx)].shape).to(self.dev)
         actions[:, (rate_idx)] = torch.clip(actions[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
         
-        actions[:, (prob_idx)] += 0.3*epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
+        actions[:, (prob_idx)] += 0.2*epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
         actions[:, (prob_idx)] = torch.clip(actions[:, (prob_idx)], min = 0, max = 1)
         
         return actions
@@ -406,6 +408,9 @@ class nash_dqn():
         Ap = []
             
         for k in range(self.n_agents):
+            
+            #pdb.set_trace()
+            
             dmu = MU_r[k]-mu[k]
             A.append(- torch.einsum('...i,...ij,...j->...', dmu, P[k] , dmu) \
                      + torch.einsum('...i,...i->...', dmu[:,2:], psi[k]) )
@@ -421,7 +426,7 @@ class nash_dqn():
         #pdb.set_trace()
         for k in range(self.n_agents):
             loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
-                                - ( 1 - done) * self.gamma * (Vp[:,k].detach() - Ap[k].detach()) )**2  )
+                                - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2  )
                 
         self.zero_grad()
             
@@ -458,7 +463,7 @@ class nash_dqn():
         for i in tqdm(range(n_iter)):
             
             
-            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.05)
+            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.1)
             self.epsilon.append(epsilon)
             self.count += 1
             
