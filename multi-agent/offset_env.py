@@ -51,7 +51,7 @@ class offset_env():
         self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
                                             - torch.maximum(self.R - x0, torch.tensor(0)) ) 
             
-        self.terminal_cost = lambda x0 : self.pen * torch.maximum ( self.R - x0, torch.tensor(0))
+        self.terminal_cost = lambda x0 : self.pen * torch.maximum ( torch.subtract(self.R, x0), torch.tensor(0))
         
         self.term_excess = lambda x0, s0 :  - self.pen * torch.maximum (self.R - x0, torch.tensor(0)) \
                                             + torch.einsum('ij,i->ij', torch.maximum (x0 - self.R, torch.tensor(0)), s0)
@@ -75,6 +75,8 @@ class offset_env():
             #t0[idx] = (self.T - self.dt)
         
         return t0, S0, X0
+    
+    
       
     def step(self, y, a, flag=1):
         
@@ -91,13 +93,6 @@ class offset_env():
         yp[:,0] = y[:,0] + self.dt
         
         # SDE step
-        
-        #pdb.set_trace()
-        
-        #TODO:
-            #need to set so it converges to the proper T in the vector
-            #time points are randomized
-            
         count = 0
         
         #pdb.set_trace()
@@ -129,42 +124,26 @@ class offset_env():
         
         if self.penalty == 'terminal':
             
-                ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
+            ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
-            
-            #if ind_T:
-                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                          + self.c * G \
-                              + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) )
-                             # + ind_T * self.terminal_cost(yp[:,2:]) )
-                    
-            #else:
-               # r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-               #       + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-               #           + self.c * G )
-            
+            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                      + self.c * G \
+                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) )
+           
                 
         elif self.penalty == 'term_excess':
             
-                ind_T = (torch.abs(yp[0,0]-period)<1e-6).int()
+            ind_T = (torch.abs(yp[0,0]-period)<1e-6).int()
             
-            #if ind_T:
-                fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.5))
-                    
-                #terminal_cost = self.pen * torch.maximum(self.R - yp[:,2], torch.tensor(0))
-                
-                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                      + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                          + self.c * G ) \
+           
+            fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.5))
+                   
+            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                    + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                        + self.c * G ) \
                             + torch.einsum('ij,i->ij', self.term_excess(yp[:,2:], fut_price), ind_T)
-                           # + ind_T * self.term_excess(yp[:,2:], fut_price) 
-           # else:
-            
-                #r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                 #     + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                 #         + self.c * G )
-            
+                
                 
         elif self.penalty == 'diff':
             
