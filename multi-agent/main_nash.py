@@ -105,7 +105,7 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
-                        n_agents=n_agents,
+                        n_agents=env_config['n_agents'],
                         gamma = config['gamma'], 
                         lr = config['learning_rate'],
                         tau = config['tau'],
