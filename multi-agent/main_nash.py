@@ -25,16 +25,44 @@ else:
 #%%
 #wandb.login()
 
+# hyper parameters
 config={
-        'random_seed': 252525,
-        'learning_rate': 0.000005,
+        'random_seed': 2024,
+        'learning_rate': 0.00005,
         'gamma': 0.9999,
         'tau':0.05,
-        'sched_step_size': 50,
+        'sched_step_size': 100,
         'n_nodes': 72,
         'n_layers': 3,
-
     }
+
+# agent setup
+n_agents = 2
+agent_config = {
+    1 : {
+        'gen_capacity': 0.25,
+        'gen_cost': 0.625
+        }
+}
+
+# environment parameters
+env_config = {
+    'n_agents' : 2,
+    'time_steps': 25,
+    'periods': np.array([1/12, 2/12, 3/12]),
+
+    'gen_capacity': torch.tensor([0.25]).to(dev),
+    'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
+    'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
+    'gen_impulse': 0.05,
+
+    'requirement': torch.tensor([5]).to(dev),
+    'penalty': 2.5,
+
+    'price_start': 2.5,
+    'friction': 0.15,
+    'sigma': 0.25
+}
 
 # run = wandb.init(
 #     project='offset credit rl',
@@ -52,27 +80,28 @@ np.random.seed(config['random_seed'])
 
 # xi and c have to be vectors of dimension n_agents
 
-n_agents = 2
+# n_agents = 2
 
-gen_capacity = torch.tensor([0.5]).to(dev)
-cost = torch.tensor([1.25]).to(dev)
 
-periods = np.array([1/12, 2/12, 3/12])
+# gen_capacity = torch.tensor([0.5]).to(dev)
+# cost = torch.tensor([1.25]).to(dev)
+
+# periods = np.array([1/12, 2/12, 3/12])
 #N is time steps per period... shouldn't do diff with multi-period?? How would it look
 
-gen_capacity = torch.tensor([0.25]).to(dev)
-cost = torch.tensor([0.625]).to(dev)
+# gen_capacity = torch.tensor([0.25]).to(dev)
+# cost = torch.tensor([0.625]).to(dev)
 
 # either is one element or n_agents length, allows for different requirements
 Req = torch.tensor([5]).to(dev)
 
-env = offset_env.offset_env(T=periods, S0=2.5, sigma=0.25, 
-                            kappa = 0.15, 
-                            eta = 0.05, 
-                            xi = gen_capacity, c = cost,  
-                            R=Req, pen=2.5, 
-                            n_agents=n_agents,
-                            N = 25,
+env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'], sigma=env_config['sigma'], 
+                            kappa = env_config['friction'], 
+                            eta = env_config['gen_impulse'], 
+                            xi = env_config['gen_capacity'], c = env_config['gen_cost'],  
+                            R=env_config['requirement'], pen=env_config['penalty'], 
+                            n_agents=env_config['n_agents'],
+                            N = env_config['time_steps'],
                             penalty='terminal',
                             dev=dev)
 
@@ -87,7 +116,7 @@ obj = nash_dqn.nash_dqn(env,
 
 
 
-obj.train(n_iter=10000, 
+obj.train(n_iter=100000, 
           batch_size=1024, 
           n_plot=100,
           update_type = 'rand_time')
