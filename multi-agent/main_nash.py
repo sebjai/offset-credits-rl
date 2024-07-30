@@ -37,7 +37,6 @@ config={
     }
 
 # agent setup
-n_agents = 2
 agent_config = {
     1 : {
         'gen_capacity': 0.25,
