@@ -810,8 +810,10 @@ class nash_dqn():
                 t = torch.ones(NS,NX).to(self.dev) * t_steps[idx]
                 Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
                 
+                #temp_actions = self.get_actions(Y, batch_size)
                 
-                a = self.mu['net'](Y).detach().squeeze().cpu().numpy()
+                
+                a = self.mu[0]['net'](Y).detach().squeeze().cpu().numpy()
                 mask = (a[:,:,1]>0.999)
                 a[mask,0] = np.nan
                 cs = ax.contourf(Sm.cpu().numpy(), Xm.cpu().numpy(), a[:,:,k], 

@@ -27,7 +27,7 @@ else:
 
 config={
         'random_seed': 252525,
-        'learning_rate': 0.00001,
+        'learning_rate': 0.000005,
         'gamma': 0.9999,
         'tau':0.05,
         'sched_step_size': 50,
@@ -60,8 +60,8 @@ cost = torch.tensor([1.25]).to(dev)
 periods = np.array([1/12, 2/12, 3/12])
 #N is time steps per period... shouldn't do diff with multi-period?? How would it look
 
-gen_capacity = torch.tensor([0.5,  0.25]).to(dev)
-cost = torch.tensor([1.25, 0.625]).to(dev)
+gen_capacity = torch.tensor([0.25]).to(dev)
+cost = torch.tensor([0.625]).to(dev)
 
 # either is one element or n_agents length, allows for different requirements
 Req = torch.tensor([5]).to(dev)
@@ -89,7 +89,7 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter=10000, 
           batch_size=1024, 
-          n_plot=1000,
+          n_plot=100,
           update_type = 'rand_time')
 
 

@@ -126,10 +126,13 @@ class offset_env():
             
             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
+            
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
                           + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) )
+                
+            yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
            
                 
         elif self.penalty == 'term_excess':
