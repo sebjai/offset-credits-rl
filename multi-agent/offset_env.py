@@ -107,8 +107,6 @@ class offset_env():
         # verify inclusive or exclusive inequality
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>=0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
         
-        pdb.set_trace()
-        
         eff_vol = self.sigma * torch.sqrt((self.dt * (period - yp[:,0]).clip(min = 0) / (period - y[:,0])))
         
         
