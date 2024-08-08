@@ -52,7 +52,7 @@ class offset_env():
         # at terminal time, we don't want any excess...
         self.excess = lambda x0 : (self.pen * torch.maximum ( torch.subtract(x0, self.R), torch.tensor(0)) ) 
         
-        self.diff_cost = lambda x0, x1 : self.T.size * ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
+        self.diff_cost = lambda x0, x1, rem : rem * ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
                                             - torch.maximum(self.R - x0, torch.tensor(0)) ) )
             
         self.terminal_cost = lambda x0 : self.pen * torch.maximum ( torch.subtract(self.R, x0), torch.tensor(0))
@@ -107,6 +107,7 @@ class offset_env():
         # verify inclusive or exclusive inequality
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>=0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
         
+        pdb.set_trace()
         
         eff_vol = self.sigma * torch.sqrt((self.dt * (period - yp[:,0]).clip(min = 0) / (period - y[:,0])))
         
@@ -158,10 +159,13 @@ class offset_env():
             
             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
+            remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
+
+            
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
-                          + self.diff_cost(y[:,2:], yp[:,2:]) )
+                          + self.diff_cost(y[:,2:], yp[:,2:], remain) )
                 
             
             yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 

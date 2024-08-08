@@ -49,7 +49,7 @@ n_agents = 4
 gen_capacity = torch.tensor([1, 0.5, 0.25, 0.5]).to(dev)
 cost = torch.tensor([2.5, 1.25, 0.625, 1.25]).to(dev)
 
-periods = np.array([1/12, 2/12])
+periods = np.array([1/12, 2/12, 3/12])
 
 #gen_capacity = torch.tensor([ 0.25, 0.5, 0.25, 0.5, 0.25]).to(dev)
 #cost = torch.tensor([0.625, 1.25, 0.625, 1.25, 0.625]).to(dev)
