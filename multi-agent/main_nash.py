@@ -49,13 +49,13 @@ env_config = {
     'time_steps': 25,
     'periods': np.array([1/12, 2/12, 3/12]),
 
-    'gen_capacity': torch.tensor([0.25]).to(dev),
     'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
-    'gen_impulse': 0.05,
+    'gen_impact': 0.05,
 
     'requirement': torch.tensor([5]).to(dev),
     'penalty': 2.5,
+    'penalty_type': 'excess',
 
     'price_start': 2.5,
     'friction': 0.15,
@@ -96,17 +96,17 @@ Req = torch.tensor([5, 5, 4, 4])
 
 env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'], sigma=env_config['sigma'], 
                             kappa = env_config['friction'], 
-                            eta = env_config['gen_impulse'], 
+                            eta = env_config['gen_impact'], 
                             xi = env_config['gen_capacity'], c = env_config['gen_cost'],  
                             R=env_config['requirement'], pen=env_config['penalty'], 
                             n_agents=env_config['n_agents'],
                             N = env_config['time_steps'],
-                            penalty='terminal',
+                            penalty=env_config['penalty_type'],
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
                         n_agents=env_config['n_agents'],
-                        gamma = config['gamma'], 
+                        gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
                         lr = config['learning_rate'],
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
@@ -115,7 +115,7 @@ obj = nash_dqn.nash_dqn(env,
 
 
 obj.train(n_iter= 5000, 
-         batch_size=2048, 
+          batch_size=2048, 
           n_plot=5000,
           update_type = 'random')
 
