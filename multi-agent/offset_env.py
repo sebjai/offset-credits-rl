@@ -36,8 +36,8 @@ class offset_env():
         # terminal penalty
         self.pen = pen
         # inventory and trade rate limits
-        self.X_max = (1.2 * R) * self.T.size
-        self.nu_max = 50
+        self.X_max = (1.5 * R) * self.T.size
+        self.nu_max = 100
         
         self.n_agents=n_agents
         
@@ -48,44 +48,54 @@ class offset_env():
         self.inv_vol = self.sigma * np.sqrt(0.5*self.T[0] )
         
         self.penalty = penalty
-        self.diff_cost = lambda x0, x1 : self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
-                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) 
+        
+        # at terminal time, we don't want any excess...
+        self.excess = lambda x0 : (self.pen * torch.maximum ( torch.subtract(x0, self.R), torch.tensor(0)) ) 
+        
+        self.diff_cost = lambda x0, x1 : self.T.size * ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
+                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) )
             
         self.terminal_cost = lambda x0 : self.pen * torch.maximum ( torch.subtract(self.R, x0), torch.tensor(0))
         
-        self.term_excess = lambda x0, s0 :  - self.pen * torch.maximum (self.R - x0, torch.tensor(0)) \
-                                            + torch.einsum('ij,i->ij', torch.maximum (x0 - self.R, torch.tensor(0)), s0)
-        
-    def randomize(self, batch_size=10, epsilon=0):
+    def randomize(self, batch_size, epsilon):
         # experiment with distributions
         # penalty + N(0,1)
         # S0 = self.S0 + 3*torch.randn(batch_size) * self.inv_vol 
+        
+        #Try making it an equally spaced list for X and S?
+        
         u = torch.rand(batch_size).to(self.dev)
         S0 = (self.S0 - 3*self.inv_vol) * (1-u) \
             + (self.S0 + 3*self.inv_vol) * u
         # Unifrom(0,x_max)
-        X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
+        X0 = (self.X_max + 2) * torch.rand(batch_size, self.n_agents).to(self.dev) - 2 # add a negative buffer
+        
+        #X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
         # randomized time 
         if self.penalty == 'diff':
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
         else:
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
-            #TODO: figure out how to allow for this with multiple periods...
-            #idx = (torch.rand(batch_size).to(self.dev) < epsilon)
-            #t0[idx] = (self.T - self.dt)
-        
+            for k in range(self.T.size):
+                idx_i = (torch.rand(batch_size).to(self.dev) < epsilon / self.T.size ).int()
+                t0[idx_i] = (self.T[k] - self.dt)
+            
         return t0, S0, X0
     
     
       
-    def step(self, y, a, flag=1):
+    def step(self, y, a, flag, epsilon):
         
         #pdb.set_trace()
         
         batch_size = y.shape[0]
         
         # G = 1 is a generate a credit by investing in a project
+        # random action (probability from the NN)
         G = 1 * (a[:,1::2] > torch.rand(batch_size, self.n_agents).to(self.dev))
+        
+        #binary outcome from the NN
+        # G = a[:,1::2]
         
         yp = torch.zeros(y.shape).to(self.dev)
         
@@ -93,11 +103,6 @@ class offset_env():
         yp[:,0] = y[:,0] + self.dt
         
         # SDE step
-        count = 0
-        
-        #pdb.set_trace()
-        
-        T_list = torch.tensor(self.T).to(self.dev)
         
         # verify inclusive or exclusive inequality
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>=0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
@@ -120,12 +125,9 @@ class offset_env():
         
         # Reward
         
-        #pdb.set_trace()
-        
         if self.penalty == 'terminal':
             
             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
-            
             
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
@@ -134,25 +136,34 @@ class offset_env():
                 
             yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
            
-                
-        elif self.penalty == 'term_excess':
+               
+        elif self.penalty == 'excess':
             
-            ind_T = (torch.abs(yp[0,0]-period)<1e-6).int()
+            ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
-           
-            fut_price = (yp[:,1] + self.sigma * self.dt ** (1/2)) / ((1+0.5))
-                   
+            end = (torch.abs(yp[:,0]-self.T[-1])<1e-6).int()
+            
+            decay = epsilon * 2
+            
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                    + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                        + self.c * G ) \
-                            + torch.einsum('ij,i->ij', self.term_excess(yp[:,2:], fut_price), ind_T)
+                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+                      + self.c * G \
+                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) \
+                              + decay * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) * flag)
                 
-                
+            yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
+           
+        
         elif self.penalty == 'diff':
+            
+            ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
                           + self.diff_cost(y[:,2:], yp[:,2:]) )
+                
+            
+            yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
         
         return yp, r

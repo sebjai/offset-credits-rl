@@ -23,26 +23,18 @@ else:
 
 
 #%%
-#wandb.login()
-
 config={
-        'random_seed': 252525,
-        'learning_rate': 0.000005,
-        'gamma': 0.9999,
+        'random_seed': 2024,
+        'learning_rate': 0.005,
+        'gamma': 1,
+        'beta': 50,
+        'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 50,
-        'n_nodes': 72,
+        'sched_step_size': 25,
+        'n_nodes': 150,
         'n_layers': 3,
 
     }
-
-# run = wandb.init(
-#     project='offset credit rl',
-#     # entity='offset-credits',
-#     # name = 'base',
-#     # Track hyperparameters and run metadata
-#     config=config,
-# )
 
 # set seeds
 
@@ -52,33 +44,33 @@ np.random.seed(config['random_seed'])
 
 # xi and c have to be vectors of dimension n_agents
 
-n_agents = 2
+n_agents = 4
 
-gen_capacity = torch.tensor([0.5]).to(dev)
-cost = torch.tensor([1.25]).to(dev)
+gen_capacity = torch.tensor([1, 0.5, 0.25, 0.5]).to(dev)
+cost = torch.tensor([2.5, 1.25, 0.625, 1.25]).to(dev)
 
-periods = np.array([1/12, 2/12, 3/12])
-#N is time steps per period... shouldn't do diff with multi-period?? How would it look
+periods = np.array([1/12, 2/12])
 
-gen_capacity = torch.tensor([0.25]).to(dev)
-cost = torch.tensor([0.625]).to(dev)
+#gen_capacity = torch.tensor([ 0.25, 0.5, 0.25, 0.5, 0.25]).to(dev)
+#cost = torch.tensor([0.625, 1.25, 0.625, 1.25, 0.625]).to(dev)
 
 # either is one element or n_agents length, allows for different requirements
-Req = torch.tensor([5]).to(dev)
+#Req = torch.tensor([5, 4, 4, 3, 3]).to(dev)
+Req = torch.tensor([5, 5, 4, 4])
 
 env = offset_env.offset_env(T=periods, S0=2.5, sigma=0.25, 
-                            kappa = 0.15, 
+                            kappa = 0.5, 
                             eta = 0.05, 
                             xi = gen_capacity, c = cost,  
                             R=Req, pen=2.5, 
                             n_agents=n_agents,
                             N = 25,
-                            penalty='terminal',
+                            penalty='excess',
                             dev=dev)
 
 obj = nash_dqn.nash_dqn(env,
                         n_agents=n_agents,
-                        gamma = config['gamma'], 
+                        gamma = config['gamma'], beta = config['beta'], alpha = config['alpha'],
                         lr = config['learning_rate'],
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
@@ -86,13 +78,27 @@ obj = nash_dqn.nash_dqn(env,
                         dev=dev)
 
 
+obj.train(n_iter= 5000, 
+         batch_size=2048, 
+          n_plot=5000,
+          update_type = 'random')
 
-obj.train(n_iter=10000, 
-          batch_size=1024, 
-          n_plot=100,
-          update_type = 'rand_time')
 
+#%%
 
+# =============================================================================
+# for i in range(4):
+#     
+#     iters = np.array([10000, 5000, 5000, 5000])
+# 
+#     obj.train(n_iter= iters[i], 
+#               batch_size=2048, 
+#               n_plot=iters[i],
+#               update_type = 'random')
+# 
+#     obj.reset(env = env)
+# 
+# =============================================================================
 #%%
 
 # =============================================================================
