@@ -23,16 +23,15 @@ else:
 
 
 #%%
-#wandb.login()
-
-# hyper parameters
 config={
         'random_seed': 2024,
-        'learning_rate': 0.00005,
-        'gamma': 0.9999,
+        'learning_rate': 0.005,
+        'gamma': 1,
+        'beta': 50,
+        'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 100,
-        'n_nodes': 72,
+        'sched_step_size': 25,
+        'n_nodes': 150,
         'n_layers': 3,
     }
 
@@ -92,7 +91,8 @@ np.random.seed(config['random_seed'])
 # cost = torch.tensor([0.625]).to(dev)
 
 # either is one element or n_agents length, allows for different requirements
-Req = torch.tensor([5]).to(dev)
+#Req = torch.tensor([5, 4, 4, 3, 3]).to(dev)
+Req = torch.tensor([5, 5, 4, 4])
 
 env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'], sigma=env_config['sigma'], 
                             kappa = env_config['friction'], 
@@ -114,13 +114,27 @@ obj = nash_dqn.nash_dqn(env,
                         dev=dev)
 
 
+obj.train(n_iter= 5000, 
+         batch_size=2048, 
+          n_plot=5000,
+          update_type = 'random')
 
-obj.train(n_iter=100000, 
-          batch_size=1024, 
-          n_plot=100,
-          update_type = 'rand_time')
 
+#%%
 
+# =============================================================================
+# for i in range(4):
+#     
+#     iters = np.array([10000, 5000, 5000, 5000])
+# 
+#     obj.train(n_iter= iters[i], 
+#               batch_size=2048, 
+#               n_plot=iters[i],
+#               update_type = 'random')
+# 
+#     obj.reset(env = env)
+# 
+# =============================================================================
 #%%
 
 # =============================================================================

@@ -47,12 +47,12 @@ class ann(nn.Module):
         y = self.prop_h_to_out(h)
 
         if self.out_activation is not None:
-            for i in range(2):
-                    y[...,i::2] = self.out_activation[i](y[...,i::2])
+            for i in range(y.shape[-1]):
+                y[...,i] = self.out_activation[i](y[...,i])
             
+
         return y
-
-
+    
     def norm(self, y: torch.tensor):
         
         norm = torch.zeros(y.shape).to(self.dev)
