@@ -30,7 +30,7 @@ config={
         'beta': 50,
         'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 25,
+        'sched_step_size': 10,
         'n_nodes': 150,
         'n_layers': 3,
     }
@@ -40,22 +40,30 @@ agent_config = {
     1 : {
         'gen_capacity': 0.25,
         'gen_cost': 0.625
+        },
+    2 : {
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
+        },
+    3 : {
+        'gen_capacity': 0.75,
+        'gen_cost': 1.875
         }
 }
 
 # environment parameters
 env_config = {
-    'n_agents' : 2,
+    'n_agents' : 3,
     'time_steps': 25,
-    'periods': np.array([1/12, 2/12, 3/12]),
+    'periods': np.array([1/12, 2/12]),
 
     'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
     'gen_impact': 0.05,
 
-    'requirement': torch.tensor([5]).to(dev),
+    'requirement': torch.tensor([3,4,5]).to(dev),
     'penalty': 2.5,
-    'penalty_type': 'excess',
+    'penalty_type': 'diff',
 
     'price_start': 2.5,
     'friction': 0.15,
@@ -75,24 +83,6 @@ env_config = {
 torch.manual_seed(config['random_seed'])
 np.random.seed(config['random_seed'])
 
-
-# xi and c have to be vectors of dimension n_agents
-
-# n_agents = 2
-
-
-# gen_capacity = torch.tensor([0.5]).to(dev)
-# cost = torch.tensor([1.25]).to(dev)
-
-# periods = np.array([1/12, 2/12, 3/12])
-#N is time steps per period... shouldn't do diff with multi-period?? How would it look
-
-# gen_capacity = torch.tensor([0.25]).to(dev)
-# cost = torch.tensor([0.625]).to(dev)
-
-# either is one element or n_agents length, allows for different requirements
-#Req = torch.tensor([5, 4, 4, 3, 3]).to(dev)
-Req = torch.tensor([5, 5, 4, 4])
 
 env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'], sigma=env_config['sigma'], 
                             kappa = env_config['friction'], 
@@ -116,7 +106,7 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter= 5000, 
           batch_size=2048, 
-          n_plot=5000,
+          n_plot=1000,
           update_type = 'random')
 
 
@@ -189,78 +179,6 @@ obj.train(n_iter= 5000,
 # dill.dump(obj, open('trained_kappa' + '.pkl', "wb"))
 # =============================================================================
 
- #%%
- 
-# =============================================================================
-# n_agents = 2
-# 
-# gen_capacity = torch.tensor([0.2, 0.4]).to(dev)
-# cost = torch.tensor([0.5, 1.0]).to(dev)
-# 
-# env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
-#                             kappa = 0.15, 
-#                             eta = 0.05, 
-#                             xi = gen_capacity, c = cost,  
-#                             R=5, pen=2.5, 
-#                             n_agents=n_agents,
-#                             N = 26,
-#                             penalty='diff')
-# 
-# obj = nash_dqn.nash_dqn(env,
-#                         n_agents=n_agents,
-#                         gamma = config['gamma'], 
-#                         lr = config['learning_rate'],
-#                         tau = config['tau'],
-#                         sched_step_size=config['sched_step_size'],
-#                         name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
-# 
-# 
-# 
-# obj.train(n_iter=3000, 
-#           batch_size=512, 
-#           n_plot=1000) 
-#  
-#  
-#  
-#  
-# =============================================================================
- 
- #%%
-# =============================================================================
-#  
-# n_agents = 4
-# 
-# gen_capacity = torch.tensor([0.2, 0.2, 0.4, 0.4]).to(dev)
-# cost = torch.tensor([0.5, 0.5, 1, 1]).to(dev)
-# 
-# env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
-#                             kappa = 0.03, 
-#                             eta = 0.05, 
-#                             xi = gen_capacity, c = cost,  
-#                             R=5, pen=2.5, 
-#                             n_agents=n_agents,
-#                             N = 50,
-#                             penalty='diff')
-# 
-# obj = nash_dqn.nash_dqn(env,
-#                         n_agents=n_agents,
-#                         gamma = config['gamma'], 
-#                         lr = config['learning_rate'],
-#                         tau = config['tau'],
-#                         sched_step_size=config['sched_step_size'],
-#                         name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'])
-# 
-# 
-# 
-# obj.train(n_iter=1_000, 
-#           batch_size=256, 
-#           n_plot=100)  
-#  
-#  
-#  
-#  
-# =============================================================================
- 
  
 #%%    
 # # try some transfer learning -- learn with various values of N

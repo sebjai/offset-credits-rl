@@ -52,8 +52,8 @@ class offset_env():
         # at terminal time, we don't want any excess...
         self.excess = lambda x0 : (self.pen * torch.maximum ( torch.subtract(x0, self.R), torch.tensor(0)) ) 
         
-        self.diff_cost = lambda x0, x1, rem : rem * ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
-                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) )
+        self.diff_cost = lambda x0, x1, rem : torch.einsum('ij,i->ij',  ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
+                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) ) , rem)
             
         self.terminal_cost = lambda x0 : self.pen * torch.maximum ( torch.subtract(self.R, x0), torch.tensor(0))
         
@@ -158,7 +158,6 @@ class offset_env():
             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
             
             remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
-
             
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
