@@ -25,12 +25,12 @@ else:
 #%%
 config={
         'random_seed': 2024,
-        'learning_rate': 0.005,
+        'learning_rate': 0.003,
         'gamma': 1,
-        'beta': 50,
+        'beta': 100,
         'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 10,
+        'sched_step_size': 15,
         'n_nodes': 150,
         'n_layers': 3,
     }
@@ -48,12 +48,16 @@ agent_config = {
     3 : {
         'gen_capacity': 0.75,
         'gen_cost': 1.875
+        },
+    4 : {
+        'gen_capacity': 1,
+        'gen_cost': 2.5
         }
 }
 
 # environment parameters
 env_config = {
-    'n_agents' : 3,
+    'n_agents' : 4,
     'time_steps': 25,
     'periods': np.array([1/12, 2/12]),
 
@@ -61,13 +65,15 @@ env_config = {
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
     'gen_impact': 0.05,
 
-    'requirement': torch.tensor([3,4,5]).to(dev),
+    'requirement': torch.tensor([3, 4, 5, 5]).to(dev),
     'penalty': 2.5,
     'penalty_type': 'diff',
 
     'price_start': 2.5,
-    'friction': 0.15,
-    'sigma': 0.25
+    'friction': 0.3,
+    'sigma': 0.25,
+    
+    'decay': 1
 }
 
 # run = wandb.init(
@@ -88,25 +94,25 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
                             kappa = env_config['friction'], 
                             eta = env_config['gen_impact'], 
                             xi = env_config['gen_capacity'], c = env_config['gen_cost'],  
-                            R=env_config['requirement'], pen=env_config['penalty'], 
-                            n_agents=env_config['n_agents'],
+                            R = env_config['requirement'], pen = env_config['penalty'], 
+                            n_agents = env_config['n_agents'],
                             N = env_config['time_steps'],
-                            penalty=env_config['penalty_type'],
-                            dev=dev)
+                            penalty = env_config['penalty_type'], decay = env_config['decay'],
+                            dev = dev)
 
 obj = nash_dqn.nash_dqn(env,
-                        n_agents=env_config['n_agents'],
+                        n_agents = env_config['n_agents'],
                         gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
                         lr = config['learning_rate'],
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
-                        name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
-                        dev=dev)
+                        name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
+                        dev = dev)
 
 
-obj.train(n_iter= 5000, 
-          batch_size=2048, 
-          n_plot=1000,
+obj.train(n_iter = 20000, 
+          batch_size = 1024, 
+          n_plot = 1000,
           update_type = 'random')
 
 

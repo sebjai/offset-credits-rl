@@ -15,7 +15,7 @@ class offset_env():
 
     def __init__(self, T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
                      c=0.25, S0=2.5, R=5, pen=2.5, N=50,
-                     n_agents=2,
+                     n_agents=2, decay = 1,
                      penalty='terminal', dev=torch.device("cpu")):
         
         self.dev = dev   
@@ -38,6 +38,9 @@ class offset_env():
         # inventory and trade rate limits
         self.X_max = (1.5 * R) * self.T.size
         self.nu_max = 100
+        
+        #decaying terminal penalty for excess inventory
+        self.decay = decay
         
         self.n_agents=n_agents
         
@@ -74,6 +77,11 @@ class offset_env():
         # randomized time 
         if self.penalty == 'diff':
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
+            
+            if self.decay == 1:
+                idx_i = (torch.rand(batch_size).to(self.dev) < epsilon/10 ).int()
+                t0[idx_i] = (self.T[-1] - self.dt)
+            
         else:
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
             for k in range(self.T.size):
@@ -124,6 +132,10 @@ class offset_env():
         
         # Reward
         
+        end = (torch.abs(yp[:,0]-self.T[-1])<1e-6).int()
+        
+        ex_pen = epsilon * 2
+        
         if self.penalty == 'terminal':
             
             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
@@ -131,27 +143,28 @@ class offset_env():
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
-                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) )
+                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T)  \
+                              + self.decay * ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) * flag)
                 
             yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
            
                
-        elif self.penalty == 'excess':
-            
-            ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
-            
-            end = (torch.abs(yp[:,0]-self.T[-1])<1e-6).int()
-            
-            decay = epsilon * 2
-            
-            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                  + (0.5 * self.kappa * nu**2 * self.dt) * flag \
-                      + self.c * G \
-                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) \
-                              + decay * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) * flag)
-                
-            yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
-           
+# =============================================================================
+#         elif self.penalty == 'excess':
+#             
+#             ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
+#             
+#             
+#             
+#             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+#                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
+#                       + self.c * G \
+#                           + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T) \
+#                               + self.decay * ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) * flag)
+#                 
+#             yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
+#            
+# =============================================================================
         
         elif self.penalty == 'diff':
             
@@ -162,7 +175,8 @@ class offset_env():
             r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                   + (0.5 * self.kappa * nu**2 * self.dt) * flag \
                       + self.c * G \
-                          + self.diff_cost(y[:,2:], yp[:,2:], remain) )
+                          + self.diff_cost(y[:,2:], yp[:,2:], remain) \
+                              + self.decay * ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) * flag)
                 
             
             yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
