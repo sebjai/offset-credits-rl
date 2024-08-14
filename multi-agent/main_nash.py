@@ -25,12 +25,12 @@ else:
 #%%
 config={
         'random_seed': 2024,
-        'learning_rate': 0.01,
+        'learning_rate': 0.008,
         'gamma': 1,
         'beta': 0,
         'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 15,
+        'sched_step_size': 25,
         'n_nodes': 150,
         'n_layers': 3,
     }
@@ -66,8 +66,8 @@ agent_config = {
 # environment parameters
 env_config = {
     'n_agents' : 6,
-    'time_steps': 25,
-    'periods': np.array([1/12, 2/12]),
+    'time_steps': 10,
+    'periods': np.array([1/12, 2/12, 3/12, 4/12]),
 
     'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
@@ -118,9 +118,9 @@ obj = nash_dqn.nash_dqn(env,
                         dev = dev)
 
 
-obj.train(n_iter = 20000, 
-          batch_size = 1024, 
-          n_plot = 2000,
+obj.train(n_iter = 100, 
+          batch_size = 10, 
+          n_plot = 5,
           update_type = 'random')
 
 

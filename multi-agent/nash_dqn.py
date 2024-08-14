@@ -415,10 +415,9 @@ class nash_dqn():
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
         Y = self.__stack_state__(t, S, X)
-
+                
         # get actions
         #MU = self.mu['net'](Y)
-        
         MU = self.get_actions(Y, batch_size)
             
         # randomize actions -- separate randomizations on trade rates and probs
@@ -451,17 +450,13 @@ class nash_dqn():
         
         loss = 0
         
-        trade_sum = self.restrict_trade(MU)
-        
         for k in range(self.n_agents):
             #pdb.set_trace()
             loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
                                 - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2  \
                                       + self.beta *  torch.abs(torch.sum(psi[k],1)) )
         self.zero_grad()
-        
-        loss += self.alpha * torch.mean( torch.abs(trade_sum)) / 2
-            
+
         loss.backward()
             
         self.VA_loss.append(loss.item())
@@ -586,10 +581,7 @@ class nash_dqn():
         X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
         a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
         r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
-
         
-        #pdb.set_trace()
-
         S[:,0] = self.env.S0
         X[:,:,0] = 0
         
@@ -622,7 +614,7 @@ class nash_dqn():
             
         S = S.detach().cpu().numpy()
         X  = X.detach().cpu().numpy()
-        
+
         a = a.detach().cpu().numpy()
         
         a = a.transpose(0,2,1)
@@ -692,8 +684,6 @@ class nash_dqn():
             print("\n")
             print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
             
-        #plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
-        #plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
         
         
         #plt.xlim(qtl[0], qtl[-1])
@@ -702,17 +692,6 @@ class nash_dqn():
         plt.tight_layout()
             
         
-# =============================================================================
-#             
-#         qtl = np.quantile(PnL,[0.005, 0.5, 0.995])
-#         
-#         plt.hist(PnL, bins=np.linspace(qtl[0], qtl[-1], 101), density=True)
-#         plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
-#         plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
-#         plt.xlim(qtl[0], qtl[-1])
-#         
-#         plt.tight_layout()
-# =============================================================================
         
        # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
         plt.show()   
@@ -720,14 +699,6 @@ class nash_dqn():
         t = 1.0* self.env.t
         
         # return t, S, X, a, r
-# =============================================================================
-#         performance = dict()
-#         performance['PnL'] = PnL
-#         performance['median'] = qtl[1]
-#         performance['cvar'] = self.CVaR(PnL)
-#         performance['mean'] = PnL.mean()
-# 
-# =============================================================================
         return plt.gcf() #, performance
 
     
