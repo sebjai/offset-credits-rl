@@ -364,7 +364,7 @@ class nash_dqn():
             
             #pdb.set_trace()
             
-            Yp, r = self.env.step(Y, MU, self.epsilon)
+            Yp, r = self.env.step(Y, MU, self.epsilon, testing = False)
             
             mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -424,7 +424,7 @@ class nash_dqn():
         # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
 
-        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon)
+        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False)
             
         mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -612,7 +612,7 @@ class nash_dqn():
             
             #pdb.set_trace()
             
-            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0)
+            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True)
             
            # pdb.set_trace()
             
@@ -665,18 +665,20 @@ class nash_dqn():
 
         plt.subplot(2, 3, 6)
         
-        
+        PnL = np.sum(r,axis=2)
         #pdb.set_trace()
         
         #need to determine PnL shape for histograms of players...
         
-        if self.env.penalty in ('terminal', 'excess'):
-            
-            PnL = np.sum(r,axis=2)
-            
-        elif self.env.penalty =='diff':
-            naive_pen = self.env.pen * self.env.R * self.env.T.size
-            PnL = np.sum(r,axis=2) - naive_pen.numpy()
+# =============================================================================
+#         if self.env.penalty in ('terminal', 'excess'):
+#             
+#             PnL = np.sum(r,axis=2)
+#             
+#         elif self.env.penalty =='diff':
+#             naive_pen = self.env.pen * self.env.R * self.env.T.size
+#             PnL = np.sum(r,axis=2) - naive_pen.numpy()
+# =============================================================================
             
         for ag in range(self.n_agents):
             
