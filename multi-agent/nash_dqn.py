@@ -675,7 +675,6 @@ class nash_dqn():
             PnL = np.sum(r,axis=2)
             
         elif self.env.penalty =='diff':
-            
             naive_pen = self.env.pen * self.env.R * self.env.T.size
             PnL = np.sum(r,axis=2) - naive_pen.numpy()
             

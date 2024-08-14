@@ -25,9 +25,9 @@ else:
 #%%
 config={
         'random_seed': 2024,
-        'learning_rate': 0.003,
+        'learning_rate': 0.01,
         'gamma': 1,
-        'beta': 100,
+        'beta': 0,
         'alpha': 0,
         'tau':0.05,
         'sched_step_size': 15,
@@ -38,26 +38,34 @@ config={
 # agent setup
 agent_config = {
     1 : {
-        'gen_capacity': 0.25,
-        'gen_cost': 0.625
+        'gen_capacity': 1,
+        'gen_cost': 2.5
         },
     2 : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
+        'gen_capacity': 1,
+        'gen_cost': 2.5
         },
-    3 : {
+    3  : {
         'gen_capacity': 0.75,
         'gen_cost': 1.875
         },
     4 : {
-        'gen_capacity': 1,
-        'gen_cost': 2.5
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
+        },
+    5 : {
+        'gen_capacity': 0.25,
+        'gen_cost': 0.625
+        },
+    6 : {
+        'gen_capacity': 0.25,
+        'gen_cost': 0.625
         }
 }
 
 # environment parameters
 env_config = {
-    'n_agents' : 4,
+    'n_agents' : 6,
     'time_steps': 25,
     'periods': np.array([1/12, 2/12]),
 
@@ -65,7 +73,7 @@ env_config = {
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
     'gen_impact': 0.05,
 
-    'requirement': torch.tensor([3, 4, 5, 5]).to(dev),
+    'requirement': torch.tensor([5, 5, 4, 4, 3, 3]).to(dev),
     'penalty': 2.5,
     'penalty_type': 'diff',
 
@@ -73,7 +81,7 @@ env_config = {
     'friction': 0.3,
     'sigma': 0.25,
     
-    'decay': 1
+    'decay': 0
 }
 
 # run = wandb.init(
@@ -112,8 +120,9 @@ obj = nash_dqn.nash_dqn(env,
 
 obj.train(n_iter = 20000, 
           batch_size = 1024, 
-          n_plot = 1000,
+          n_plot = 2000,
           update_type = 'random')
+
 
 
 #%%
