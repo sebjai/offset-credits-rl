@@ -341,7 +341,7 @@ class nash_dqn():
                 
         return sums
         
-    def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
+    def update(self,iter=1, batch_size=256, epsilon=0.01, update='V'):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
@@ -364,7 +364,7 @@ class nash_dqn():
             
             #pdb.set_trace()
             
-            Yp, r = self.env.step(Y, MU, self.epsilon, testing = False)
+            Yp, r = self.env.step(Y, MU, self.epsilon, iter=iter, testing = False)
             
             mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -410,7 +410,7 @@ class nash_dqn():
                 self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
     
-    def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
+    def update_random_time(self,iter=1, batch_size=256, epsilon=0.01, update='V'):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
@@ -423,7 +423,7 @@ class nash_dqn():
         # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
 
-        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False)
+        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, iter=iter, testing = False)
             
         mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -499,13 +499,13 @@ class nash_dqn():
             if update_type == 'linear':
 
                 #  self.update(batch_size=batch_size, epsilon=epsilon, update='all')
-                self.update(batch_size=batch_size, epsilon=epsilon, update='V')
-                self.update(batch_size=batch_size, epsilon=epsilon, update='A')
-                self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
+                self.update(batch_size=batch_size, epsilon=epsilon, iter=i, update='V')
+                self.update(batch_size=batch_size, epsilon=epsilon, iter=i, update='A')
+                self.update(batch_size=batch_size, epsilon=epsilon, iter=i, update='mu')
                 
             else:
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='V')
-                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='all')
+                self.update_random_time(batch_size=batch_size, epsilon=epsilon, iter=i, update='all')
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='A')
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='mu')
             

@@ -93,8 +93,12 @@ class offset_env():
         return t0, S0, X0
     
     
-      
-    def step(self, y, a, flag, epsilon, testing = False):
+    def smooth_transfer(self, param, iter, decay_in=10_000, upper = 1000, type='linear'):
+        if type == 'linear':
+            return torch.max(param, upper - (iter/decay_in) * (upper - param))
+
+        
+    def step(self, y, a, flag, epsilon, iter=1, testing = False):
         
         #pdb.set_trace()
         
@@ -160,7 +164,7 @@ class offset_env():
                 
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt) \
-                          + self.c * G \
+                          + self.smooth_transfer(self.c, iter=iter, upper=1000, type='linear') * G \
                               + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T)  \
                                   + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end))
                     
@@ -175,7 +179,7 @@ class offset_env():
     
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt)  \
-                          + self.c * G \
+                          + self.smooth_transfer(self.c, iter=iter, upper=1000, type='linear') * G \
                               + self.diff_cost(y[:,2:], yp[:,2:], remain) \
                                   + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) )
                     

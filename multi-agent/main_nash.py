@@ -84,6 +84,8 @@ env_config = {
     'decay': 0
 }
 
+assert(len(env_config['requirement']) == env_config['n_agents'])
+
 # run = wandb.init(
 #     project='offset credit rl',
 #     # entity='offset-credits',
