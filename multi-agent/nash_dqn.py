@@ -164,7 +164,9 @@ class nash_dqn():
         optimizer = optim.AdamW(net.parameters(),
                                 lr=self.lr)
         
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=self.sched_step_size, gamma=0.999)
+        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=self.sched_step_size, 
+                                              gamma=1)
+                                            #   gamma=0.999)
        
         return optimizer, scheduler
     
