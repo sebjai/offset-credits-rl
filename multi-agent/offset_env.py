@@ -78,11 +78,18 @@ class offset_env():
         if self.penalty == 'diff':
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
             
-# =============================================================================
-#             if self.decay == 1:
-#                 idx_i = (torch.rand(batch_size).to(self.dev) < epsilon/10 ).int()
-#                 t0[idx_i] = (self.T[-1] - self.dt)
-# =============================================================================
+            #idx_i = (torch.rand(batch_size).to(self.dev) < 0.05 ).int()
+            
+            # 20% of batch_size will always go to times just before compliance dates
+            idx = round(batch_size * 0.2 / self.T.size)
+            
+            for k in range(self.T.size):
+                t0[k*idx:(k+1)*idx] = (self.T[k] - self.dt)
+                
+                
+            if self.decay == 1:
+                idx_i = (torch.rand(batch_size).to(self.dev) < 0.1 ).int()
+                t0[idx_i] = (self.T[-1] - self.dt)
             
         else:
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
@@ -94,7 +101,7 @@ class offset_env():
     
     
       
-    def step(self, y, a, flag, epsilon, testing = False):
+    def step(self, y, a, flag, epsilon, testing = False, gen = True):
         
         #pdb.set_trace()
         
@@ -102,8 +109,13 @@ class offset_env():
         
         # G = 1 is a generate a credit by investing in a project
         # random action (probability from the NN)
-        G = 1 * (a[:,1::2] > torch.rand(batch_size, self.n_agents).to(self.dev))
         
+        #can turn generation on and off, off will be 0
+        Gen_val = 1 * (a[:,1::2] > torch.rand(batch_size, self.n_agents).to(self.dev))
+        if gen:
+            G = Gen_val
+        else:
+            G = 0 * Gen_val
         #binary outcome from the NN
         # G = a[:,1::2]
         
@@ -140,18 +152,33 @@ class offset_env():
         
         end = (torch.abs(yp[:,0]-self.T[-1])<1e-6).int()
         
-        ex_pen = epsilon * 3 * self.decay
+        ex_pen = epsilon * self.decay
         
         if testing:
             
-            ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
+            if self.penalty == 'terminal':
             
-            r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                      + self.c * G \
-                          + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T))
+                ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
                 
-            yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T)
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                          + self.c * G \
+                              + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T))
+                    
+                yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T)
             
+            elif self.penalty == 'diff':
+                
+                ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
+                
+                remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
+    
+                r = -( y[:,1].reshape(-1,1) * nu *self.dt \
+                          + self.c * G \
+                              + self.diff_cost(y[:,2:], yp[:,2:], remain))
+                    
+                
+                yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
+                
         else:
             
             if self.penalty == 'terminal':

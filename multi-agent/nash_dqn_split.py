@@ -1,9 +1,11 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun  9 10:39:56 2022
+Created on Thu Aug  1 10:27:05 2024
 
-@author: sebja
+@author: liamwelsh
 """
+
 
 from offset_env import offset_env as Environment
 
@@ -28,15 +30,44 @@ import pdb
 from datetime import datetime
 import wandb
 
-class nash_dqn():
+class mu_ann(nn.Module):
+
+    def __init__(self, nNodes, nLayers, env=None):
+        super(mu_ann, self).__init__()
+        
+        self.env = env
+        
+        self.nu = ann(3, 1, nNodes, nLayers, 
+                      out_activation = [lambda x : self.env.nu_max*torch.tanh(x)],
+                      env=env)
+        
+        self.prob = ann(3, 1, nNodes, nLayers,
+                        out_activation = [torch.sigmoid],
+                        env=env)
+
+    def forward(self, Y):
+        
+        if len(Y.shape) == 2:
+            y = torch.zeros(Y.shape[0],2)
+        else:
+            y = torch.zeros(Y.shape[0],Y.shape[1],2)
+        
+        y[...,0] = self.nu(Y).squeeze()
+        y[...,1] = self.prob(Y).squeeze()
+        
+        return y
+
+
+class nash_dqn_split():
 
     def __init__(self, 
                  env: Environment,  
                  n_agents=2,
-                 gamma=0.9999, beta = 100, alpha = 0, 
+                 gamma=0.9999, beta = 100,  alpha = 0,
                  n_nodes=36, n_layers=3, 
-                 lr=0.001, tau=0.005, sched_step_size = 20,
-                 name="", dev=torch.device("cpu")):
+                 lr=0.001, lr_prob = 0.001, 
+                 tau=0.005, sched_step_size = 20,
+                 name="", dev=torch.device("cpu"), cyclic = False):
     
         self.dev = dev
 
@@ -49,6 +80,7 @@ class nash_dqn():
         self.name =  name
         self.sched_step_size = sched_step_size
         self.lr = lr
+        self.lr_prob = lr_prob
         self.tau = tau
         
         self.__initialize_NNs__()
@@ -61,6 +93,7 @@ class nash_dqn():
         self.r = []
         self.epsilon = []
         
+        self.cyclic = cyclic
         
         self.alpha = alpha
         
@@ -75,8 +108,6 @@ class nash_dqn():
         
         self.epsilon = []
         self.env = env
-        self.lr = self.lr / 10
-        
         #self.mu['net'].env = env
         #self.V_main['net'].env = env
         #self.V_target['net'].env = env
@@ -85,7 +116,8 @@ class nash_dqn():
             self.P[g]['net'].env = env
             self.psi[g]['net'].env = env
             self.V_main[g]['net'].env = env
-            self.mu[g]['net'].env = env
+            self.mu_prob[g]['net'].env = env
+            self.mu_trade[g]['net'].env = env
             self.V_target[g]['net'].env = env
             
             for k in self.P[g]['optimizer'].param_groups:
@@ -97,19 +129,21 @@ class nash_dqn():
             for k in self.V_main[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
             
-            for k in self.mu[g]['optimizer'].param_groups:
+            for k in self.mu_trade[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
-            
+                
+            for k in self.mu_prob[g]['optimizer'].param_groups:
+                k['lr'] = self.lr_prob
         
     def __initialize_NNs__(self):
         
         
-        def create_net(n_in, n_out, n_nodes, n_layers, out_activation = None):
+        def create_net(n_in, n_out, n_nodes, n_layers, out_activation = None, prob = False):
             net = ann(n_in, n_out, n_nodes, n_layers, 
                       out_activation = out_activation,
                       env=self.env, dev=self.dev).to(self.dev)
             
-            optimizer, scheduler = self.__get_optim_sched__(net)
+            optimizer, scheduler = self.__get_optim_sched__(net, prob)
             
             return {'net' : net, 'optimizer' : optimizer, 'scheduler' : scheduler}
         
@@ -139,17 +173,26 @@ class nash_dqn():
         
         self.V_main = []
         
-        self.mu = []
+        self.mu_trade = []
+        
+        self.mu_prob = []
         
         self.V_target = []
         
         for k in range(self.n_agents):
             self.V_main.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3))
             
-            # try binary output activation instead of a probability.... might make graphs ugly but lets see
-            self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
-                                 out_activation=[lambda x : self.env.nu_max * torch.tanh(x),
-                                                 lambda x : (torch.sigmoid(x))]))
+# =============================================================================
+#             self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
+#                                  out_activation=[lambda x : self.env.nu_max * torch.tanh(x),
+#                                                  lambda x : (torch.sigmoid(x))]))
+# =============================================================================
+            
+            self.mu_trade.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3,
+                                 out_activation = [lambda x : self.env.nu_max * torch.tanh(x)]))
+            
+            self.mu_prob.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3,
+                                 out_activation = [lambda x : (torch.sigmoid(x))], prob = True))
             
             self.V_target.append(copy.copy(self.V_main[k]))
             
@@ -158,20 +201,38 @@ class nash_dqn():
             self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
 
         
+    def __get_optim_sched__(self, net, prob = False):
         
-    def __get_optim_sched__(self, net):
         
-        optimizer = optim.AdamW(net.parameters(),
+        if prob == True:
+            optimizer = optim.AdamW(net.parameters(),
+                                lr=self.lr_prob)
+        else:
+            optimizer = optim.AdamW(net.parameters(),
                                 lr=self.lr)
         
-        scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=self.sched_step_size, gamma=0.999)
-       
+        scheduler = optim.lr_scheduler.StepLR(optimizer,
+                                              step_size=self.sched_step_size,
+                                              gamma=0.9999)
+        
+        #scheduler = torch.optim.lr_scheduler.CyclicLR(optimizer, base_lr=0.00001, max_lr=0.001)
+    
         return optimizer, scheduler
     
     def soft_update(self, main, target):
     
         for param, target_param in zip(main.parameters(), target.parameters()):
             target_param.data.copy_(self.tau * param.data + (1.0 - self.tau) * target_param.data)
+            
+    def freeze_net(self, net):
+        
+        for param in net.parameters():
+            param.requires_grad = False 
+            
+    def unfreeze_net(self, net):
+        
+        for param in net.parameters():
+            param.requires_grad = True 
         
     def __stack_state__(self, t, S, X, plot1 = False):
         
@@ -190,7 +251,7 @@ class nash_dqn():
     
     def __grab_mini_batch__(self, batch_size, epsilon):
         
-        t, S, X = self.env.randomize(batch_size = batch_size, epsilon = epsilon)
+        t, S, X = self.env.randomize(batch_size, epsilon)
         
         return t, S, X
    
@@ -205,7 +266,8 @@ class nash_dqn():
         
         for k in range(self.n_agents):
             
-            MU[...,(2*k):((2*k)+2)] = self.mu[k]['net'](Y)
+            MU[...,(2*k)] = self.mu_trade[k]['net'](Y).squeeze()
+            MU[...,(2*k)+1] = self.mu_prob[k]['net'](Y).squeeze()
             
         return MU
             
@@ -235,8 +297,14 @@ class nash_dqn():
         
         # Y = (t, S, X_1,..., X_K)
         
+        #MU = self.mu['net'](Y)
+        #MUp = self.mu['net'](Yp)
+        
         MU = self.get_actions(Y, batch_size)
         MUp = self.get_actions(Yp, batch_size)
+        
+        #V = self.V_main['net'](Y)
+        #Vp = self.V_target['net'](Yp)
         
         V = self.get_value(Y, batch_size)
         Vp = self.get_target(Yp, batch_size)
@@ -262,6 +330,8 @@ class nash_dqn():
             
     def reorder_actions(self, MU):
         
+        #pdb.set_trace()
+        
         mu =[]
         for k in range(self.n_agents):
             mu.append(torch.zeros(MU.shape).to(self.dev))
@@ -280,7 +350,8 @@ class nash_dqn():
             self.P[k]['optimizer'].zero_grad()
             self.psi[k]['optimizer'].zero_grad()
             
-            self.mu[k]['optimizer'].zero_grad()
+            self.mu_trade[k]['optimizer'].zero_grad()
+            self.mu_prob[k]['optimizer'].zero_grad()
             self.V_main[k]['optimizer'].zero_grad()        
         
     def step_optim(self, net):
@@ -299,27 +370,15 @@ class nash_dqn():
         rate_idx = torch.arange(0, (2*self.n_agents), 2).to(self.dev)
         prob_idx = torch.arange(1, (2*self.n_agents), 2).to(self.dev)
         
-        actions[:, (rate_idx)] += 0.2*self.env.nu_max * epsilon * torch.randn(actions[:, (rate_idx)].shape).to(self.dev)
+        actions[:, (rate_idx)] += 0.2 * self.env.nu_max * epsilon * torch.randn(actions[:, (rate_idx)].shape).to(self.dev)
         actions[:, (rate_idx)] = torch.clip(actions[:, (rate_idx)], min = -self.env.nu_max, max = self.env.nu_max)
         
         #pdb.set_trace()
         
-        actions[:, (prob_idx)] += 0.5*epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
+        actions[:, (prob_idx)] += 0.5 * epsilon * torch.randn(actions[:, (prob_idx)].shape).to(self.dev)
         actions[:, (prob_idx)] = torch.clip(actions[:, (prob_idx)], min = 0, max = 1)
         
         return actions
-    
-    
-    def freeze_net(self, net):
-        
-        for param in net.parameters():
-            param.requires_grad = False 
-            
-    def unfreeze_net(self, net):
-        
-        for param in net.parameters():
-            param.requires_grad = True 
-        
     
     def update_nets(self, update):
         
@@ -329,7 +388,8 @@ class nash_dqn():
             
         elif update == 'mu':
             for k in range(self.n_agents):
-                self.step_optim(self.mu[k])
+                self.step_optim(self.mu_trade[k])
+                self.step_optim(self.mu_prob[k])
             
         elif update == 'A':
             for k in range(self.n_agents):
@@ -338,14 +398,12 @@ class nash_dqn():
                 
         elif update =='all':
             
-            #self.step_optim(self.V_main)
-            #self.step_optim(self.mu)
-            
             for k in range(self.n_agents):
-                self.step_optim(self.mu[k])
-                self.step_optim(self.V_main[k])
                 self.step_optim(self.P[k])
                 self.step_optim(self.psi[k])
+                self.step_optim(self.mu_trade[k])
+                self.step_optim(self.mu_prob[k])
+                self.step_optim(self.V_main[k])
                 
     def restrict_trade(self, mu):
         
@@ -353,7 +411,7 @@ class nash_dqn():
                 
         return sums
         
-    def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V', gen = True):
+    def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V'):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
@@ -376,7 +434,7 @@ class nash_dqn():
             
             #pdb.set_trace()
             
-            Yp, r = self.env.step(Y, MU, self.epsilon, testing = False, gen = gen)
+            Yp, r = self.env.step(Y, MU)
             
             mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -427,14 +485,15 @@ class nash_dqn():
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
         Y = self.__stack_state__(t, S, X)
-                
+
         # get actions
         #MU = self.mu['net'](Y)
+        
         MU = self.get_actions(Y, batch_size)
             
         # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
-
+            
         Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False, gen=gen)
             
         mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
@@ -452,11 +511,7 @@ class nash_dqn():
             dmu = MU_r[k]-mu[k]
             A.append(- torch.einsum('...i,...ij,...j->...', dmu, P[k] , dmu) \
                      + torch.einsum('...i,...i->...', dmu[:,2:], psi[k]) )
-                                    
-            #dmu_p = mu_p[k] - mu_p[k].detach()
-            #Ap.append(- torch.einsum('...i,...ij,...j->...', dmu_p, P_p[k] , dmu_p) \
-            #          + torch.einsum('...i,...i->...', dmu_p[:,2:], psi_p[k]) )
-            
+                 
             
         done = 1.0 * (torch.abs(Yp[:,0] - self.env.T[-1]) <= 1e-6)
         
@@ -465,10 +520,10 @@ class nash_dqn():
         for k in range(self.n_agents):
             #pdb.set_trace()
             loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
-                                - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2  \
-                                      + self.beta *  torch.sum(torch.abs(psi[k]), 1) )
+                                - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2 ) \
+                                      + self.beta * torch.mean( torch.abs(torch.sum(psi[k],1)) )
         self.zero_grad()
-
+            
         loss.backward()
             
         self.VA_loss.append(loss.item())
@@ -479,6 +534,7 @@ class nash_dqn():
         Y = copy.copy(Yp.detach())
             
         # soft update main >> target
+            
         for k in range(self.n_agents):
             self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
@@ -493,36 +549,51 @@ class nash_dqn():
         # self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
         # self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
-        C = 5000
-        D = 10000
+        C = 4000
+        D = 8000
         
         if len(self.epsilon)==0:
             self.count=0
             
-        gen_on = True
+        gen_on = False
+        
+        #freeze prob network
+        for k in range(self.n_agents):
+            self.freeze_net(self.mu_prob[k]['net'])
             
         for i in tqdm(range(n_iter)):
             
+            #arbitrarily choose some i to turn on generation and freeze trading
+            if i == n_iter/2: 
+                
+                #turn on generation, freeze the trade rate network, reset epsilon (?) and lr (?)
+                gen_on = True
+                
+                self.epsilon = []
+                
+                for k in range(self.n_agents):
+                    self.freeze_net(self.mu_trade[k]['net'])
+                    self.unfreeze_net(self.mu_prob[k]['net'])
+                    
+                    for g in self.mu_prob[k]['optimizer'].param_groups:
+                        g['lr'] = self.lr_prob
             
-            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.1)
+            
+            epsilon = np.maximum(C/(D+len(self.epsilon)), 0.05)
             self.epsilon.append(epsilon)
             self.count += 1
             
-# =============================================================================
-#             if i == 30_000:
-#                 gen_on = True
-# =============================================================================
             
             if update_type == 'linear':
 
                 #  self.update(batch_size=batch_size, epsilon=epsilon, update='all')
-                self.update(batch_size=batch_size, epsilon=epsilon, update='V', gen = gen_on)
-                self.update(batch_size=batch_size, epsilon=epsilon, update='A', gen = gen_on)
-                self.update(batch_size=batch_size, epsilon=epsilon, update='mu', gen = gen_on)
+                self.update(batch_size=batch_size, epsilon=epsilon, update='V')
+                self.update(batch_size=batch_size, epsilon=epsilon, update='A')
+                self.update(batch_size=batch_size, epsilon=epsilon, update='mu')
                 
             else:
-                #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='V')
                 self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='all', gen = gen_on)
+                #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='V')
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='A')
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='mu')
             
@@ -584,12 +655,11 @@ class nash_dqn():
         
         plt.tight_layout()
         # plt.show()
-        
-    # TODO: Update run_strategy and the plots
     
     def run_strategy(self, nsims=10_000, name="", N = None, gen = True):
         
         # N is time steps
+        
         if N is None:
             N = self.env.N
         
@@ -597,12 +667,17 @@ class nash_dqn():
         X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
         a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
         r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
+
         
+        #pdb.set_trace()
+
         S[:,0] = self.env.S0
         X[:,:,0] = 0
         
         ones = torch.ones(nsims).to(self.dev)
         
+        #pdb.set_trace()
+
         for k in range(N * self.env.T.size):
             
             
@@ -628,7 +703,7 @@ class nash_dqn():
             
         S = S.detach().cpu().numpy()
         X  = X.detach().cpu().numpy()
-
+        
         a = a.detach().cpu().numpy()
         
         a = a.transpose(0,2,1)
@@ -649,6 +724,7 @@ class nash_dqn():
             plt.subplot(2, 3, plt_i)
             plt.fill_between(t, qtl[0,:], qtl[2,:], alpha=0.5, color = col)
             plt.plot(t, qtl[1,:], color=col, linewidth=1)
+            
             plt.plot(t, x[1,:], color=col, linewidth=1.5)
             
             #plt.plot(t, x[:n_paths, :].T, linewidth=1)
@@ -659,24 +735,21 @@ class nash_dqn():
 
         plot(self.env.t, (S), 1, r"$S_t$" )
         
-        
         colors = ['b','r','g','y','m','c']
         
         for ag in range(self.n_agents):
             
             plot(self.env.t, (X[:,ag,:]), 2, r"$X_t$", col = colors[ag])
-            
             plot(self.env.t[:-1], np.cumsum(r[:,ag,:], axis=1), 3, r"$r_t$", col = colors[ag])
             
             # need to fix for shape of a
             plot(self.env.t[:-1], a[:,:,(2*ag)], 4, r"$\nu_t$", col = colors[ag])
-            
             plot(self.env.t[:-1], a[:,:,(2*ag+1)], 5, r"$p_t$", col = colors[ag])
 
         plt.subplot(2, 3, 6)
         
+        
         PnL = np.sum(r,axis=2)
-        #pdb.set_trace()
         
         #need to determine PnL shape for histograms of players...
         
@@ -686,22 +759,13 @@ class nash_dqn():
 #             PnL = np.sum(r,axis=2)
 #             
 #         elif self.env.penalty =='diff':
-#             TODO: Double check this... can compute later in the agent for loop
-#             
 #             naive_pen = self.env.pen * self.env.R * self.env.T.size
 #             PnL = np.sum(r,axis=2) - naive_pen.numpy()
-#             
 # =============================================================================
+           
         for ag in range(self.n_agents):
             
-            pnl_sub = PnL[:,ag]
-            
-            if self.env.penalty == 'diff':
-                naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
-            else:
-                naive_pen = 0
-                
-            pnl_ag = pnl_sub - naive_pen.numpy()
+            pnl_ag = PnL[:,ag]
             
             qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
             
@@ -711,6 +775,8 @@ class nash_dqn():
             print("\n")
             print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
             
+        #plt.axvline(qtl[1], color='g', linestyle='--', linewidth=2)
+        #plt.axvline(-naive_pen, color='r', linestyle='--', linewidth=2)
         
         
         #plt.xlim(qtl[0], qtl[-1])
@@ -725,7 +791,6 @@ class nash_dqn():
         
         t = 1.0* self.env.t
         
-        # return t, S, X, a, r
         return plt.gcf() #, performance
 
     
@@ -809,9 +874,6 @@ class nash_dqn():
              np.linspace(0,1,21),
              "Generation Probability Heatmap over Time")    
         return trade_fig, gen_fig
-    
-    
-    
-    
-    
-    
+
+
+
