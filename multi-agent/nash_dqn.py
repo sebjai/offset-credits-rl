@@ -9,6 +9,7 @@ from offset_env import offset_env as Environment
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import colors
 
 import torch
 import torch.optim as optim
@@ -66,20 +67,12 @@ class nash_dqn():
         
         self.VA_loss = []
         
-# =============================================================================
-#         self.Q_loss = []
-#         self.pi_loss = []
-# =============================================================================
-        
     def reset(self, env):
         
         self.epsilon = []
         self.env = env
-        self.lr = self.lr / 10
+        self.lr = self.lr
         
-        #self.mu['net'].env = env
-        #self.V_main['net'].env = env
-        #self.V_target['net'].env = env
         
         for g in range(self.n_agents):
             self.P[g]['net'].env = env
@@ -202,11 +195,11 @@ class nash_dqn():
     def get_actions(self, Y, batch_size):
         
         MU = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
-        
+            
         for k in range(self.n_agents):
-            
+                
             MU[...,(2*k):((2*k)+2)] = self.mu[k]['net'](Y)
-            
+                
         return MU
             
     def get_value(self, Y, batch_size):
@@ -214,8 +207,6 @@ class nash_dqn():
         Val = torch.zeros([batch_size, self.n_agents]).to(self.dev)
         
         for k in range(self.n_agents):
-            
-            #pdb.set_trace()
             
             Val[...,k:(k+1)] = self.V_main[k]['net'](Y)
             
@@ -352,6 +343,16 @@ class nash_dqn():
         sums = torch.sum(mu[...,::2], 1)
                 
         return sums
+    
+    def zero_trade(self, mu):
+        
+        mu_sub = mu[..., :-2]
+        
+        sums = -1 * torch.sum(mu_sub[...,::2], 1)
+        
+        mu[..., -2] = sums
+        
+        return mu
         
     def update(self,n_iter=1, batch_size=256, epsilon=0.01, update='V', gen = True):
         
@@ -373,6 +374,11 @@ class nash_dqn():
             # randomize actions -- separate randomizations on trade rates and probs
             
             MU = self.randomize_actions(MU, epsilon)
+            
+            if self.env.zero_sum:
+                
+                MU[...,(2*self.n_agents - 1)] = -1 * torch.sum(MU[...,0:2*(self.n_agents - 1):2], 1)
+             
             
             #pdb.set_trace()
             
@@ -422,7 +428,7 @@ class nash_dqn():
                 self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
     
-    def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V', gen = True):
+    def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V', gen = True, it = 1):
         
         t, S, X = self.__grab_mini_batch__(batch_size, epsilon)
         
@@ -434,8 +440,17 @@ class nash_dqn():
             
         # randomize actions -- separate randomizations on trade rates and probs
         MU = self.randomize_actions(MU, epsilon)
+        
+        if self.env.zero_sum:
+            
+            #pdb.set_trace()
+            
+            MU = self.zero_trade(MU)
+            
+            #MU[...,(2*self.n_agents - 1)] = -1 * torch.sum(MU[...,0:2*(self.n_agents - 1):2], 1)
+            
 
-        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False, gen=gen)
+        Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False, gen=gen, it = it)
             
         mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
             
@@ -491,7 +506,6 @@ class nash_dqn():
               update_type = 'linear'):
         
         # self.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
-        # self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
         C = 5000
         D = 10000
@@ -522,7 +536,7 @@ class nash_dqn():
                 
             else:
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='V')
-                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='all', gen = gen_on)
+                self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='all', gen = gen_on, it = i)
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='A')
                 #self.update_random_time(batch_size=batch_size, epsilon=epsilon, update='mu')
             
@@ -585,7 +599,6 @@ class nash_dqn():
         plt.tight_layout()
         # plt.show()
         
-    # TODO: Update run_strategy and the plots
     
     def run_strategy(self, nsims=10_000, name="", N = None, gen = True):
         
@@ -613,14 +626,19 @@ class nash_dqn():
             # get policy
             
             a[:,:,k] = self.get_actions(Y, nsims)
+            
+            if self.env.zero_sum:
+                
+                a[:,:,k] = self.zero_trade(a[:,:,k])
+                
+                #a[...,(2*self.n_agents - 1), k] = -1 * torch.sum(a[...,0:2*(self.n_agents - 1):2, k], 1)
+             
 
             # step in environment
             
             #pdb.set_trace()
             
-            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen)
-            
-           # pdb.set_trace()
+            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, it = 1)
             
             # update subsequent state and inventory
             S[:, k+1] = Y_p[:,1]
@@ -676,22 +694,7 @@ class nash_dqn():
         plt.subplot(2, 3, 6)
         
         PnL = np.sum(r,axis=2)
-        #pdb.set_trace()
         
-        #need to determine PnL shape for histograms of players...
-        
-# =============================================================================
-#         if self.env.penalty in ('terminal', 'excess'):
-#             
-#             PnL = np.sum(r,axis=2)
-#             
-#         elif self.env.penalty =='diff':
-#             TODO: Double check this... can compute later in the agent for loop
-#             
-#             naive_pen = self.env.pen * self.env.R * self.env.T.size
-#             PnL = np.sum(r,axis=2) - naive_pen.numpy()
-#             
-# =============================================================================
         for ag in range(self.n_agents):
             
             pnl_sub = PnL[:,ag]
@@ -712,105 +715,264 @@ class nash_dqn():
             print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
             
         
-        
-        #plt.xlim(qtl[0], qtl[-1])
-            #   
-            
         plt.tight_layout()
             
         
         
-       # plt.savefig("path_"  +self.name + "_" + name + ".pdf", format='pdf', bbox_inches='tight')
         plt.show()   
         
         t = 1.0* self.env.t
         
         # return t, S, X, a, r
         return plt.gcf() #, performance
-
     
-    def plot_policy(self, name=""):
-        '''
-        plot policy for various states combinations at different time instances from 0 to self.env.T
-        
-        will work for single player or need to specifiy the player and update accordingly (eg: dims)
-
-        '''
-        
-        NS = 75
-        S = torch.linspace(self.env.S0-5*self.env.inv_vol,
-                           self.env.S0+5*self.env.inv_vol, NS).to(self.dev)
-        
-        NX = 75
-        X = torch.linspace(-1, self.env.X_max, NX).to(self.dev)
-        
-        Sm, Xm = torch.meshgrid(S, X,indexing='ij')
-        Sm = Sm.to(self.dev)
-        Xm = Xm.to(self.dev)
-
-        def plot(k, lvls, title):
-            
-            # plot 
-            t_steps = np.linspace(0, self.env.T[-1], 9)
-            t_steps[-1] = (self.env.T[-1] - self.env.dt)
-            
-            n_cols = 3
-            n_rows = int(np.floor(len(t_steps)/n_cols)+1)
-            
-            if n_rows*n_cols > len(t_steps):
-                n_rows -= 1
-            
-            fig, axs = plt.subplots(n_rows, n_cols, figsize=(6,5))
-            
-            plt.suptitle(title, y =1.01, fontsize = 'xx-large')
-            
-            for idx, ax in enumerate(axs.flat):
-                
-                
-                t = torch.ones(NS,NX).to(self.dev) * t_steps[idx]
-                Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
-                
-                #temp_actions = self.get_actions(Y, batch_size)
-                
-                
-                a = self.mu[0]['net'](Y).detach().squeeze().cpu().numpy()
-                mask = (a[:,:,1]>0.999)
-                a[mask,0] = np.nan
-                cs = ax.contourf(Sm.cpu().numpy(), Xm.cpu().numpy(), a[:,:,k], 
-                                  levels=lvls,
-                                  cmap='RdBu')
-                # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
     
-                ax.axvline(self.env.S0, linestyle='--', color='k')
-                ax.axhline(self.env.R, linestyle='--', color='k')
-                ax.axhline(0, linestyle='--', color='k')
-                ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
-                ax.set_facecolor("gray")
-            
-            fig.text(0.5, -0.01, 'OC Price', ha='center',fontsize = 'x-large')
-            fig.text(-0.01, 0.5, 'Inventory', va='center', rotation='vertical',fontsize = 'x-large')
-            # fig.subplots_adjust(right=0.9)   
     
-            cbar_ax = fig.add_axes([1.04, 0.15, 0.05, 0.7])
-            cbar = fig.colorbar(cs, cax=cbar_ax)
-            # cbar.set_ticks(np.linspace(-self.env.nu_max/2, self.env.nu_max/2, 11))
-            # cbar.set_ticks(np.linspace(-50, 50, 11))
-                
-            plt.tight_layout()
+    
+    def plot_nice(self, nsims=10_000, name="", N = None, gen = True):
+        #make saved plots of individual items, eg: OC price, inventory, trade rates and probs
+        
+        if N is None:
+            N = self.env.N
+        
+        S = torch.zeros((nsims, N * self.env.T.size + 1)).float().to(self.dev)
+        X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
+        r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
+        
+        S[:,0] = self.env.S0
+        X[:,:,0] = 0
+        
+        ones = torch.ones(nsims).to(self.dev)
+        
+        for k in range(N * self.env.T.size):
             
+            Y = self.__stack_state__(self.env.t[k]* ones ,S[:,k], X[:,:,k])
+
+            # normalize : Y (tSX)
+            # get policy
+            
+            a[:,:,k] = self.get_actions(Y, nsims)
+
+            # step in environment
+            
+            #pdb.set_trace()
+            
+            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen)
+            
+           # pdb.set_trace()
+            
+            # update subsequent state and inventory
+            S[:, k+1] = Y_p[:,1]
+            X[:,:, k+1] = Y_p[:,2:]
+            
+        S = S.detach().cpu().numpy()
+        X  = X.detach().cpu().numpy()
+
+        a = a.detach().cpu().numpy()
+        
+        a = a.transpose(0,2,1)
+        
+        r = r.detach().cpu().numpy()
+
+        plt.figure()
+        
+        plt.plot()
+        qtl= np.quantile(S, [0.01, 0.5, 0.99], axis=0)
+
+        plt.fill_between(self.env.t, qtl[0,:], qtl[2,:], alpha=0.35, color = 'b')
+        plt.plot(self.env.t, qtl[1,:], color='b', linewidth=1.5)
+        for el in (self.env.T):
+            plt.axvline(x=el, color = 'k', linestyle='dashed')
+        plt.title(r'OC Credit Price')
+        plt.xlabel(r't')
+        plt.ylabel(r'$S_t$')
+        
+        plt.savefig(str('oc_price.pdf'), format="pdf", bbox_inches="tight")
+        
+        def plot(t, dat, title, ylab, xlab, path, col, leg):
+            
+            plt.figure()
+            
+            #pdb.set_trace()
+            
+            for ag in range(self.n_agents):
+                
+                x = dat[:,ag,:]
+                
+            
+                qtl= np.quantile(x, [0.01, 0.5, 0.99], axis=0)
+
+                plt.fill_between(t, qtl[0,:], qtl[2,:], alpha=0.5, color = col[ag], label='_nolegend_')
+                plt.plot(t, qtl[1,:], color = col[ag], linewidth=1.5)
+            
+            for el in (self.env.T):
+                plt.axvline(x=el, color = 'k', linestyle='dashed')
+
+            
+            
+            plt.title(title)
+            plt.xlabel(xlab)
+            plt.ylabel(ylab)
+            
+            if leg:
+                plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'],bbox_to_anchor=(1, 1))
+            
+            
+            plt.savefig(str(path), format="pdf", bbox_inches="tight")
+            plt.show()
+
+        def plot_action(t, dat, i, title, ylab, xlab, path, col, leg):
+            
+            # i = 0 or 1, if trade rate or prob, respectively
+            
+            plt.figure()
+            
+            shift = 0.002
+            
+            for ag in range(self.n_agents):
+                
+                x = dat[:,:,(2 * ag + i)]
+                
+            
+                qtl= np.quantile(x, [0.01, 0.5, 0.99], axis=0)
+
+                plt.fill_between(t, qtl[0,:] + ag * shift, qtl[2,:] + ag * shift, alpha=0.5, color = col[ag])
+                plt.plot(t, qtl[1,:] + ag * shift, color=col[ag], linewidth=1.5)
+            
+            for el in (self.env.T):
+                plt.axvline(x=el, color = 'k', linestyle='dashed')
+                
+                
+            plt.title(title)
+            plt.xlabel(xlab)
+            plt.ylabel(ylab)
+            
+            
+            if leg:
+                plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'])
+            
+            plt.savefig(str(path), format="pdf", bbox_inches="tight")
             plt.show()
             
-            return fig
+        colors = ['b','r','darkgreen','darkorange','fuchsia','cyan']
         
-        trade_fig = plot(0, 
-             np.linspace(-self.env.nu_max, self.env.nu_max, 21), 
-             "Trade Rate Heatmap over Time")
-        gen_fig = plot(1, 
-             np.linspace(0,1,21),
-             "Generation Probability Heatmap over Time")    
-        return trade_fig, gen_fig
+        #pdb.set_trace()
+        plot(self.env.t, X, "Agent Inventories", r"$X_t$", r"t", "inv.pdf", colors, True)
+        
+        plot_action(self.env.t[:-1], a, 0, "Agent Trade Rates", r"$\nu_t$", r"t", "trade.pdf", colors, False)
+        plot_action(self.env.t[:-1], a, 1, "Agent Generation Probabilities", r"$p_t$", r"t", "prob.pdf", colors, False)
+        
     
-    
+
+        PnL = np.sum(r,axis=2)
+        
+        for ag in range(self.n_agents):
+            
+            pnl_sub = PnL[:,ag]
+            
+            if self.env.penalty == 'diff':
+                naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
+            else:
+                naive_pen = 0
+                
+            pnl_ag = pnl_sub - naive_pen.numpy()
+            
+            qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
+            
+            cvar = self.CVaR(pnl_ag, confidence_level = 0.95)
+            #         
+            print("\n")
+            print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
+            
+        
+        t = 1.0* self.env.t
+        
+# =============================================================================
+#     
+#     def plot_policy(self, name=""):
+#         '''
+#         plot policy for various states combinations at different time instances from 0 to self.env.T
+#         
+#         will work for single player or need to specifiy the player and update accordingly (eg: dims)
+# 
+#         '''
+#         
+#         NS = 75
+#         S = torch.linspace(self.env.S0-5*self.env.inv_vol,
+#                            self.env.S0+5*self.env.inv_vol, NS).to(self.dev)
+#         
+#         NX = 75
+#         X = torch.linspace(-1, self.env.X_max, NX).to(self.dev)
+#         
+#         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
+#         Sm = Sm.to(self.dev)
+#         Xm = Xm.to(self.dev)
+# 
+#         def plot(k, lvls, title):
+#             
+#             # plot 
+#             t_steps = np.linspace(0, self.env.T[-1], 9)
+#             t_steps[-1] = (self.env.T[-1] - self.env.dt)
+#             
+#             n_cols = 3
+#             n_rows = int(np.floor(len(t_steps)/n_cols)+1)
+#             
+#             if n_rows*n_cols > len(t_steps):
+#                 n_rows -= 1
+#             
+#             fig, axs = plt.subplots(n_rows, n_cols, figsize=(6,5))
+#             
+#             plt.suptitle(title, y =1.01, fontsize = 'xx-large')
+#             
+#             for idx, ax in enumerate(axs.flat):
+#                 
+#                 
+#                 t = torch.ones(NS,NX).to(self.dev) * t_steps[idx]
+#                 Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
+#                 
+#                 #temp_actions = self.get_actions(Y, batch_size)
+#                 
+#                 
+#                 a = self.mu[0]['net'](Y).detach().squeeze().cpu().numpy()
+#                 mask = (a[:,:,1]>0.999)
+#                 a[mask,0] = np.nan
+#                 cs = ax.contourf(Sm.cpu().numpy(), Xm.cpu().numpy(), a[:,:,k], 
+#                                   levels=lvls,
+#                                   cmap='RdBu')
+#                 # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
+#     
+#                 ax.axvline(self.env.S0, linestyle='--', color='k')
+#                 ax.axhline(self.env.R, linestyle='--', color='k')
+#                 ax.axhline(0, linestyle='--', color='k')
+#                 ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
+#                 ax.set_facecolor("gray")
+#             
+#             fig.text(0.5, -0.01, 'OC Price', ha='center',fontsize = 'x-large')
+#             fig.text(-0.01, 0.5, 'Inventory', va='center', rotation='vertical',fontsize = 'x-large')
+#             # fig.subplots_adjust(right=0.9)   
+#     
+#             cbar_ax = fig.add_axes([1.04, 0.15, 0.05, 0.7])
+#             cbar = fig.colorbar(cs, cax=cbar_ax)
+#             # cbar.set_ticks(np.linspace(-self.env.nu_max/2, self.env.nu_max/2, 11))
+#             # cbar.set_ticks(np.linspace(-50, 50, 11))
+#                 
+#             plt.tight_layout()
+#             
+#             plt.show()
+#             
+#             return fig
+#         
+#         trade_fig = plot(0, 
+#              np.linspace(-self.env.nu_max, self.env.nu_max, 21), 
+#              "Trade Rate Heatmap over Time")
+#         gen_fig = plot(1, 
+#              np.linspace(0,1,21),
+#              "Generation Probability Heatmap over Time")    
+#         return trade_fig, gen_fig
+#     
+#     
+# =============================================================================
     
     
     

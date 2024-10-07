@@ -25,12 +25,12 @@ else:
 #%%
 config={
         'random_seed': 2024,
-        'learning_rate': 0.008,
+        'learning_rate': 0.006,
         'gamma':1,
         'beta': 0,
         'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 25,
+        'sched_step_size': 20,
         'n_nodes': 150,
         'n_layers': 3,
     }
@@ -38,42 +38,48 @@ config={
 # agent setup
 agent_config = {
     1 : {
-        'gen_capacity': 1,
-        'gen_cost': 2.5
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
         },
     2 : {
         'gen_capacity': 0.5,
         'gen_cost': 1.25
         },
     3  : {
-        'gen_capacity': 0.25,
-        'gen_cost': 0.625
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
         },
     4  : {
         'gen_capacity': 0.5,
         'gen_cost': 1.25
-        }
+        },
+    5  : {
+    'gen_capacity': 0.5,
+    'gen_cost': 1.25
+    }
 }
 
 # environment parameters
 env_config = {
-    'n_agents' : 4,
+    'n_agents' : 5,
     'time_steps': 25,
     'periods': np.array([1/12, 2/12]),
 
     'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
-    'gen_impact': 0.05,
+    'gen_impact': 0.02,
 
-    'requirement': torch.tensor([5, 4, 4, 5]).to(dev),
+    'requirement': torch.tensor([5, 5, 5, 5, 5]).to(dev),
     'penalty': 2.5,
     'penalty_type': 'diff',
 
     'price_start': 2.5,
-    'friction': 0.3,
+    'friction': 0.1,
     'sigma': 0.25,
     
-    'decay': 0
+    'decay': 0,
+    
+    'zero_sum': True
 }
 
 # run = wandb.init(
@@ -97,8 +103,8 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
                             R = env_config['requirement'], pen = env_config['penalty'], 
                             n_agents = env_config['n_agents'],
                             N = env_config['time_steps'],
-                            penalty = env_config['penalty_type'], decay = env_config['decay'],
-                            dev = dev)
+                            penalty = env_config['penalty_type'], decay = env_config['decay'], 
+                            dev = dev, zero_sum = env_config['zero_sum'])
 
 obj = nash_dqn.nash_dqn(env,
                         n_agents = env_config['n_agents'],
@@ -110,14 +116,14 @@ obj = nash_dqn.nash_dqn(env,
                         dev = dev)
 
 
-obj.train(n_iter = 10000, 
+obj.train(n_iter = 30000, 
           batch_size = 1024, 
-          n_plot = 1000,
+          n_plot = 3000,
           update_type = 'random')
 
 
 
-#%%
+ #%%
 
 
 

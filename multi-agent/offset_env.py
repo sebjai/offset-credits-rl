@@ -16,7 +16,7 @@ class offset_env():
     def __init__(self, T=1/12, sigma=0.5, kappa=0.03, eta = 0.05, xi=0.1,
                      c=0.25, S0=2.5, R=5, pen=2.5, N=50,
                      n_agents=2, decay = 1,
-                     penalty='terminal', dev=torch.device("cpu")):
+                     penalty='terminal', dev=torch.device("cpu"), zero_sum = False):
         
         self.dev = dev   
         #vector of period terminus'
@@ -38,6 +38,8 @@ class offset_env():
         # inventory and trade rate limits
         self.X_max = 2 * R
         self.nu_max = 100
+        
+        self.zero_sum = zero_sum
         
         #decaying terminal penalty for excess inventory
         self.decay = decay
@@ -99,9 +101,22 @@ class offset_env():
             
         return t0, S0, X0
     
+    def smooth_transfer(self, it, decay_in=20_000, upper = 1000, lower=0, decrease=1):
+        
+        x = it/decay_in
+
+        if decrease:
+            return torch.max(torch.tensor(lower),
+                             torch.tensor(upper - (x) * (upper - lower)))
+
+        else:
+            return torch.min(torch.tensor(upper), 
+                             torch.tensor(lower + (x) * (upper - lower)))
+
+    
     
       
-    def step(self, y, a, flag, epsilon, testing = False, gen = True):
+    def step(self, y, a, flag, epsilon, testing = False, gen = True, it = 1):
         
         #pdb.set_trace()
         
@@ -125,8 +140,6 @@ class offset_env():
         yp[:,0] = y[:,0] + self.dt
         
         # SDE step
-        
-        #pdb.set_trace()
         
         # verify inclusive or exclusive inequality
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
@@ -174,12 +187,13 @@ class offset_env():
     
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                           + self.c * G \
-                              + self.diff_cost(y[:,2:], yp[:,2:], remain))
+                              + self.diff_cost(y[:,2:], yp[:,2:], remain)  )
                     
                 
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
                 
         else:
+            
             
             if self.penalty == 'terminal':
                 
