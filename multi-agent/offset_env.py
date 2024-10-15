@@ -165,7 +165,7 @@ class offset_env():
         
         end = (torch.abs(yp[:,0]-self.T[-1])<1e-6).int()
         
-        ex_pen = epsilon * self.decay
+        ex_pen = self.decay
         
         if testing:
             
@@ -213,7 +213,7 @@ class offset_env():
                 ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
                 
                 remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
-    
+
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt)  \
                           + self.c * G \

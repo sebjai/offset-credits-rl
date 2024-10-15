@@ -1,10 +1,10 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun  9 10:39:56 2022
+Created on Fri Oct 11 10:43:02 2024
 
-@author: sebja
+@author: liamwelsh
 """
-
 from offset_env import offset_env as Environment
 
 import numpy as np
@@ -29,7 +29,7 @@ import pdb
 from datetime import datetime
 import wandb
 
-class nash_dqn():
+class single_net_nash_dqn():
 
     def __init__(self, 
                  env: Environment,  
@@ -73,13 +73,20 @@ class nash_dqn():
         self.env = env
         self.lr = self.lr
         
+        self.V_main['net'].env = env
+        self.mu['net'].env = env
+        self.V_target['net'].env = env
+        
+        for k in self.V_main['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+        for k in self.mu['optimizer'].param_groups:
+            k['lr'] = self.lr
         
         for g in range(self.n_agents):
             self.P[g]['net'].env = env
             self.psi[g]['net'].env = env
-            self.V_main[g]['net'].env = env
-            self.mu[g]['net'].env = env
-            self.V_target[g]['net'].env = env
+            
             
             for k in self.P[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
@@ -87,11 +94,7 @@ class nash_dqn():
             for k in self.psi[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
             
-            for k in self.V_main[g]['optimizer'].param_groups:
-                k['lr'] = self.lr
             
-            for k in self.mu[g]['optimizer'].param_groups:
-                k['lr'] = self.lr
             
         
     def __initialize_NNs__(self):
@@ -130,21 +133,22 @@ class nash_dqn():
         
         self.psi = []
         
-        self.V_main = []
+        self.V_main = (create_net(n_in = (2 + self.n_agents), n_out = self.n_agents, n_nodes=32, n_layers=3))
         
-        self.mu = []
+        if self.env.zero_sum:
+            
+            self.mu = (create_net(n_in = (2 + self.n_agents), n_out = 2*self.n_agents - 1, n_nodes=32, n_layers=3,
+                             out_activation=[lambda x : (torch.sigmoid(x)),
+                                             lambda x : self.env.nu_max / 2 * torch.tanh(x)]))
+        else:
+            
+            self.mu = (create_net(n_in = (2 + self.n_agents), n_out = 2*self.n_agents - 1, n_nodes=32, n_layers=3,
+                             out_activation=[lambda x : self.env.nu_max / 2 * torch.tanh(x),
+                                             lambda x : (torch.sigmoid(x))]))
         
-        self.V_target = []
+        self.V_target = (copy.copy(self.V_main))
         
         for k in range(self.n_agents):
-            self.V_main.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3))
-            
-            # try binary output activation instead of a probability.... might make graphs ugly but lets see
-            self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
-                                 out_activation=[lambda x : self.env.nu_max / 2 * torch.tanh(x),
-                                                 lambda x : (torch.sigmoid(x))]))
-            
-            self.V_target.append(copy.copy(self.V_main[k]))
             
             self.psi.append(create_net(n_in=(2 + self.n_agents), n_out= (2 * (self.n_agents - 1)), n_nodes=32, n_layers=3))
             
@@ -196,9 +200,25 @@ class nash_dqn():
         
         MU = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
             
-        for k in range(self.n_agents):
+        if self.env.zero_sum:
+            #set the 2n - 1 elements
+            MU[...,0:-1] = self.mu['net'](Y)
+            #sum up the rates
+            sums = -1 * torch.sum(MU[...,1::2], 1)
+            #set last agent rate to negative sum
+            MU[..., -1] = sums
+            
+            #need to alternate the order to match remainder of code
+            MU_temp = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
+            
+            MU_temp[...,0::2]  = MU[...,1::2]
+            MU_temp[...,1::2]  = MU[...,0::2]
+            
+            MU = MU_temp
                 
-            MU[...,(2*k):((2*k)+2)] = self.mu[k]['net'](Y)
+        else:
+                
+            MU = self.mu['net'](Y)
                 
         return MU
             
@@ -206,9 +226,7 @@ class nash_dqn():
         
         Val = torch.zeros([batch_size, self.n_agents]).to(self.dev)
         
-        for k in range(self.n_agents):
-            
-            Val[...,k:(k+1)] = self.V_main[k]['net'](Y)
+        Val = self.V_main['net'](Y)
             
         return Val
             
@@ -216,9 +234,7 @@ class nash_dqn():
         
         targ = torch.zeros([batch_size, self.n_agents]).to(self.dev)
         
-        for k in range(self.n_agents):
-            
-            targ[...,k:(k+1)] = self.V_target[k]['net'](Y)
+        targ = self.V_target['net'](Y)
             
         return targ
             
@@ -267,12 +283,13 @@ class nash_dqn():
         
     def zero_grad(self):
         
+        self.mu['optimizer'].zero_grad()
+        self.V_main['optimizer'].zero_grad()  
+        
         for k in range(self.n_agents):
             self.P[k]['optimizer'].zero_grad()
             self.psi[k]['optimizer'].zero_grad()
             
-            self.mu[k]['optimizer'].zero_grad()
-            self.V_main[k]['optimizer'].zero_grad()        
         
     def step_optim(self, net):
         net['optimizer'].step()
@@ -315,12 +332,10 @@ class nash_dqn():
     def update_nets(self, update):
         
         if update =='V':
-            for k in range(self.n_agents):
-                self.step_optim(self.V_main[k])
+            self.step_optim(self.V_main)
             
         elif update == 'mu':
-            for k in range(self.n_agents):
-                self.step_optim(self.mu[k])
+            self.step_optim(self.mu)
             
         elif update == 'A':
             for k in range(self.n_agents):
@@ -329,12 +344,10 @@ class nash_dqn():
                 
         elif update =='all':
             
-            #self.step_optim(self.V_main)
-            #self.step_optim(self.mu)
+            self.step_optim(self.V_main)
+            self.step_optim(self.mu)
             
             for k in range(self.n_agents):
-                self.step_optim(self.mu[k])
-                self.step_optim(self.V_main[k])
                 self.step_optim(self.P[k])
                 self.step_optim(self.psi[k])
                 
@@ -494,12 +507,8 @@ class nash_dqn():
         Y = copy.copy(Yp.detach())
             
         # soft update main >> target
-        for k in range(self.n_agents):
-            self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
+        self.soft_update(self.V_main['net'], self.V_target['net'])
             
-            
-    
-    
     def train(self, n_iter=1_000, 
               batch_size=256, 
               n_plot=100,
@@ -888,92 +897,3 @@ class nash_dqn():
         
         t = 1.0* self.env.t
         
-# =============================================================================
-#     
-#     def plot_policy(self, name=""):
-#         '''
-#         plot policy for various states combinations at different time instances from 0 to self.env.T
-#         
-#         will work for single player or need to specifiy the player and update accordingly (eg: dims)
-# 
-#         '''
-#         
-#         NS = 75
-#         S = torch.linspace(self.env.S0-5*self.env.inv_vol,
-#                            self.env.S0+5*self.env.inv_vol, NS).to(self.dev)
-#         
-#         NX = 75
-#         X = torch.linspace(-1, self.env.X_max, NX).to(self.dev)
-#         
-#         Sm, Xm = torch.meshgrid(S, X,indexing='ij')
-#         Sm = Sm.to(self.dev)
-#         Xm = Xm.to(self.dev)
-# 
-#         def plot(k, lvls, title):
-#             
-#             # plot 
-#             t_steps = np.linspace(0, self.env.T[-1], 9)
-#             t_steps[-1] = (self.env.T[-1] - self.env.dt)
-#             
-#             n_cols = 3
-#             n_rows = int(np.floor(len(t_steps)/n_cols)+1)
-#             
-#             if n_rows*n_cols > len(t_steps):
-#                 n_rows -= 1
-#             
-#             fig, axs = plt.subplots(n_rows, n_cols, figsize=(6,5))
-#             
-#             plt.suptitle(title, y =1.01, fontsize = 'xx-large')
-#             
-#             for idx, ax in enumerate(axs.flat):
-#                 
-#                 
-#                 t = torch.ones(NS,NX).to(self.dev) * t_steps[idx]
-#                 Y = self.__stack_state__(t, Sm, Xm, plot1 = True)
-#                 
-#                 #temp_actions = self.get_actions(Y, batch_size)
-#                 
-#                 
-#                 a = self.mu[0]['net'](Y).detach().squeeze().cpu().numpy()
-#                 mask = (a[:,:,1]>0.999)
-#                 a[mask,0] = np.nan
-#                 cs = ax.contourf(Sm.cpu().numpy(), Xm.cpu().numpy(), a[:,:,k], 
-#                                   levels=lvls,
-#                                   cmap='RdBu')
-#                 # print(torch.amin(a[:,:,0]),torch.amax(a[:,:,0]))
-#     
-#                 ax.axvline(self.env.S0, linestyle='--', color='k')
-#                 ax.axhline(self.env.R, linestyle='--', color='k')
-#                 ax.axhline(0, linestyle='--', color='k')
-#                 ax.set_title(r'$t={:.3f}'.format(t_steps[idx]) +'$',fontsize = 'x-large')
-#                 ax.set_facecolor("gray")
-#             
-#             fig.text(0.5, -0.01, 'OC Price', ha='center',fontsize = 'x-large')
-#             fig.text(-0.01, 0.5, 'Inventory', va='center', rotation='vertical',fontsize = 'x-large')
-#             # fig.subplots_adjust(right=0.9)   
-#     
-#             cbar_ax = fig.add_axes([1.04, 0.15, 0.05, 0.7])
-#             cbar = fig.colorbar(cs, cax=cbar_ax)
-#             # cbar.set_ticks(np.linspace(-self.env.nu_max/2, self.env.nu_max/2, 11))
-#             # cbar.set_ticks(np.linspace(-50, 50, 11))
-#                 
-#             plt.tight_layout()
-#             
-#             plt.show()
-#             
-#             return fig
-#         
-#         trade_fig = plot(0, 
-#              np.linspace(-self.env.nu_max, self.env.nu_max, 21), 
-#              "Trade Rate Heatmap over Time")
-#         gen_fig = plot(1, 
-#              np.linspace(0,1,21),
-#              "Generation Probability Heatmap over Time")    
-#         return trade_fig, gen_fig
-#     
-#     
-# =============================================================================
-    
-    
-    
-    

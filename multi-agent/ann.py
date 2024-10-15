@@ -48,7 +48,10 @@ class ann(nn.Module):
 
         if self.out_activation is not None:
             for i in range(y.shape[-1]):
-                y[...,i] = self.out_activation[i](y[...,i])
+                if i % 2 == 0:
+                    y[...,i] = self.out_activation[0](y[...,i])
+                else:
+                    y[...,i] = self.out_activation[1](y[...,i])
             
 
         return y

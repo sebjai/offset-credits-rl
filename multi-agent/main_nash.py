@@ -6,7 +6,7 @@
 import matplotlib.pyplot as plt
 plt.style.use('paper.mplstyle')
 
-import nash_dqn, offset_env
+import nash_dqn, offset_env, single_net_nash_dqn
 import dill
 import wandb
 import io
@@ -25,29 +25,29 @@ else:
 #%%
 config={
         'random_seed': 2024,
-        'learning_rate': 0.006,
+        'learning_rate': 0.004,
         'gamma':1,
         'beta': 0,
         'alpha': 0,
         'tau':0.05,
-        'sched_step_size': 20,
-        'n_nodes': 150,
-        'n_layers': 3,
+        'sched_step_size': 25,
+        'n_nodes': 120,
+        'n_layers': 5,
     }
 
 # agent setup
 agent_config = {
     1 : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
+        'gen_capacity': 1,
+        'gen_cost': 2.5
         },
     2 : {
         'gen_capacity': 0.5,
         'gen_cost': 1.25
         },
     3  : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
+        'gen_capacity': 0.25,
+        'gen_cost': 0.625
         },
     4  : {
         'gen_capacity': 0.5,
@@ -62,8 +62,8 @@ agent_config = {
 # environment parameters
 env_config = {
     'n_agents' : 5,
-    'time_steps': 25,
-    'periods': np.array([1/12, 2/12]),
+    'time_steps': 20,
+    'periods': np.array([1/12, 2/12, 3/12]),
 
     'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
     'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
@@ -77,7 +77,7 @@ env_config = {
     'friction': 0.1,
     'sigma': 0.25,
     
-    'decay': 0,
+    'decay': 1,
     
     'zero_sum': True
 }
@@ -116,15 +116,111 @@ obj = nash_dqn.nash_dqn(env,
                         dev = dev)
 
 
-obj.train(n_iter = 30000, 
+obj.train(n_iter = 25000, 
           batch_size = 1024, 
-          n_plot = 3000,
+          n_plot = 5000,
           update_type = 'random')
 
 
 
- #%%
+#%% SINGLE NETWORK TEST
+config={
+        'random_seed': 2024,
+        'learning_rate': 0.006,
+        'gamma':1,
+        'beta': 0.2,
+        'alpha': 0,
+        'tau':0.05,
+        'sched_step_size': 25,
+        'n_nodes': 150,
+        'n_layers': 5,
+    }
 
+# agent setup
+agent_config = {
+    1 : {
+        'gen_capacity': 1,
+        'gen_cost': 2.5
+        },
+    2 : {
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
+        },
+    3  : {
+        'gen_capacity': 0.25,
+        'gen_cost': 0.625
+        },
+    4  : {
+        'gen_capacity': 0.5,
+        'gen_cost': 1.25
+        },
+    5  : {
+    'gen_capacity': 0.5,
+    'gen_cost': 1.25
+    }
+}
+
+# environment parameters
+env_config = {
+    'n_agents' : 5,
+    'time_steps': 30,
+    'periods': np.array([1/12, 2/12, 3/12]),
+
+    'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
+    'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
+    'gen_impact': 0.02,
+
+    'requirement': torch.tensor([5, 5, 5, 5, 5]).to(dev),
+    'penalty': 2.5,
+    'penalty_type': 'diff',
+
+    'price_start': 2.5,
+    'friction': 0.1,
+    'sigma': 0.25,
+    
+    'decay': 1,
+    
+    'zero_sum': True
+}
+
+# run = wandb.init(
+#     project='offset credit rl',
+#     # entity='offset-credits',
+#     # name = 'base',
+#     # Track hyperparameters and run metadata
+#     config=config,
+# )
+
+# set seeds
+
+torch.manual_seed(config['random_seed'])
+np.random.seed(config['random_seed'])
+
+
+env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'], sigma=env_config['sigma'], 
+                            kappa = env_config['friction'], 
+                            eta = env_config['gen_impact'], 
+                            xi = env_config['gen_capacity'], c = env_config['gen_cost'],  
+                            R = env_config['requirement'], pen = env_config['penalty'], 
+                            n_agents = env_config['n_agents'],
+                            N = env_config['time_steps'],
+                            penalty = env_config['penalty_type'], decay = env_config['decay'], 
+                            dev = dev, zero_sum = env_config['zero_sum'])
+
+obj = single_net_nash_dqn.single_net_nash_dqn(env,
+                        n_agents = env_config['n_agents'],
+                        gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
+                        lr = config['learning_rate'],
+                        tau = config['tau'],
+                        sched_step_size=config['sched_step_size'],
+                        name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
+                        dev = dev)
+
+
+obj.train(n_iter = 25000, 
+          batch_size = 1024, 
+          n_plot = 5000,
+          update_type = 'random')
 
 
 #%%
