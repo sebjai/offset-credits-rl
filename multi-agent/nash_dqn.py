@@ -101,7 +101,7 @@ class nash_dqn():
             net = ann(n_in, n_out, n_nodes, n_layers, 
                       out_activation = out_activation,
                       env=self.env, dev=self.dev).to(self.dev)
-            net.apply(weights_init)
+            # net.apply(weights_init)
             
             optimizer, scheduler = self.__get_optim_sched__(net)
             

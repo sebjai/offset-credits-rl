@@ -16,13 +16,21 @@ class ann(nn.Module):
         
         self.dev = dev 
         
+        # input layer
         self.prop_in_to_h = nn.Linear(n_in, nNodes)
 
+        # middle layers
         self.prop_h_to_h = nn.ModuleList(
             [nn.Linear(nNodes, nNodes) for i in range(nLayers-1)])
 
+        # output layer
         self.prop_h_to_out = nn.Linear(nNodes, n_out)
-        
+        # custom weight init
+        torch.nn.init.xavier_uniform_(self.prop_h_to_out.weight)
+        # torch.nn.init.kaiming_uniform_()
+        # custom bias init
+        self.prop_h_to_out.bias.data.fill_(0.01)
+
         if activation == 'silu':
             self.g = nn.SiLU()
         elif activation == 'relu':
