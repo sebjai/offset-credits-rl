@@ -101,6 +101,7 @@ class nash_dqn():
             net = ann(n_in, n_out, n_nodes, n_layers, 
                       out_activation = out_activation,
                       env=self.env, dev=self.dev).to(self.dev)
+            net.apply(weights_init)
             
             optimizer, scheduler = self.__get_optim_sched__(net)
             
@@ -113,6 +114,16 @@ class nash_dqn():
             result = {'net' : net, 'optimizer' : optimizer, 'scheduler' : scheduler}
             
             return result
+        
+        def weights_init(m):
+            classname = m.__class__.__name__
+            # for every Linear layer in a model..
+            if classname.find('Linear') != -1:
+                # apply a uniform distribution to the weights and a bias=0
+                torch.nn.init.xavier_uniform_(m.weight)
+                # torch.nn.init.kaiming_uniform_()
+                # torch.nn.init.kaiming_normal_()
+                m.bias.data.fill_(0.01)
         
         # value network
         #   features are t, S,X
