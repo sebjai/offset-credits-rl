@@ -36,8 +36,8 @@ class offset_env():
         # terminal penalty
         self.pen = pen
         # inventory and trade rate limits
-        self.X_max = 2 * R
-        self.nu_max = 100
+        self.X_max = torch.max(2 * R)
+        self.nu_max = 150
         
         self.zero_sum = zero_sum
         
@@ -73,7 +73,7 @@ class offset_env():
         S0 = (self.S0 - 3*self.inv_vol) * (1-u) \
             + (self.S0 + 3*self.inv_vol) * u
         # Unifrom(0,x_max)
-        X0 = (self.X_max + 2) * torch.rand(batch_size, self.n_agents).to(self.dev) - 2 # add a negative buffer
+        X0 = (self.X_max) * torch.rand(batch_size, self.n_agents).to(self.dev) - self.R # add a negative buffer
         
         #X0 = torch.rand(batch_size, self.n_agents).to(self.dev) * self.X_max
         # randomized time 
@@ -83,13 +83,13 @@ class offset_env():
             #idx_i = (torch.rand(batch_size).to(self.dev) < 0.05 ).int()
             
             # 20% of batch_size will always go to times just before compliance dates
-            idx = round(batch_size * 0.2 / self.T.size)
+            idx = round(batch_size * 0.1 / self.T.size)
             
             for k in range(self.T.size):
                 t0[k*idx:(k+1)*idx] = (self.T[k] - self.dt)
                 
                 
-            if self.decay == 1:
+            if self.decay > 0:
                 idx_i = (torch.rand(batch_size).to(self.dev) < 0.1 ).int()
                 t0[idx_i] = (self.T[-1] - self.dt)
             
@@ -98,6 +98,10 @@ class offset_env():
             for k in range(self.T.size):
                 idx_i = (torch.rand(batch_size).to(self.dev) < epsilon / self.T.size ).int()
                 t0[idx_i] = (self.T[k] - self.dt)
+        
+        #always start with zero inventory
+        init_time = torch.isin(t0, self.t[0])
+        X0[init_time,:] = 0
             
         return t0, S0, X0
     
@@ -116,9 +120,7 @@ class offset_env():
     
     
       
-    def step(self, y, a, flag, epsilon, testing = False, gen = True, it = 1):
-        
-        #pdb.set_trace()
+    def step(self, y, a, flag, epsilon, testing = False, gen = True, it = 1, sim = False):
         
         batch_size = y.shape[0]
         
@@ -143,8 +145,6 @@ class offset_env():
         
         # verify inclusive or exclusive inequality
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
-        
-        
         
         eff_vol = self.sigma * torch.sqrt((self.dt * (period - yp[:,0]).clip(min = 0) / (period - y[:,0])))
         
@@ -177,7 +177,7 @@ class offset_env():
                           + self.c * G \
                               + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T))
                     
-                yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T)
+                yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
             
             elif self.penalty == 'diff':
                 
@@ -187,13 +187,13 @@ class offset_env():
     
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                           + self.c * G \
-                              + self.diff_cost(y[:,2:], yp[:,2:], remain)  )
+                              + self.diff_cost(y[:,2:], yp[:,2:], remain) )
+                                 # + torch.einsum('j,i->ij', self.pen*self.R, ind_T) )
                     
                 
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
                 
         else:
-            
             
             if self.penalty == 'terminal':
                 
@@ -218,9 +218,15 @@ class offset_env():
                       + (0.5 * self.kappa * nu**2 * self.dt)  \
                           + self.c * G \
                               + self.diff_cost(y[:,2:], yp[:,2:], remain) \
-                                  + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) )
+                                  + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end)  ) 
+                                     # + torch.einsum('j,i->ij', self.pen*self.R, ind_T))
                     
                 
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
         
-        return yp, r
+        
+        
+        if sim:
+            return yp, r, self.xi * G , nu * self.dt
+        else:
+            return yp, r

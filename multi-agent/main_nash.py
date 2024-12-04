@@ -6,7 +6,7 @@
 import matplotlib.pyplot as plt
 plt.style.use('paper.mplstyle')
 
-import nash_dqn, offset_env, single_net_nash_dqn
+import nash_dqn, offset_env
 import dill
 import wandb
 import io
@@ -22,13 +22,13 @@ else:
     dev = torch.device("cpu")    
 
 
-#%%
+#%% Four Agent
 config={
         'random_seed': 2024,
         'learning_rate': 0.004,
         'gamma':1,
         'beta': 0,
-        'alpha': 0,
+        'alpha': 0.0,
         'tau':0.05,
         'sched_step_size': 25,
         'n_nodes': 120,
@@ -38,57 +38,63 @@ config={
 # agent setup
 agent_config = {
     1 : {
-        'gen_capacity': 1,
-        'gen_cost': 2.5
+        'gen_capacity': 2,
+        'gen_cost': 100,
+        'req': 25,
+        'count': 1
         },
     2 : {
+        'gen_capacity': 1.5,
+        'gen_cost': 75,
+        'req': 25,
+        'count': 1
+        },
+    3 : {
+        'gen_capacity': 1,
+        'gen_cost': 50,
+        'req': 25,
+        'count': 1
+        },
+    
+    4 : {
         'gen_capacity': 0.5,
-        'gen_cost': 1.25
-        },
-    3  : {
-        'gen_capacity': 0.25,
-        'gen_cost': 0.625
-        },
-    4  : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
-        },
-    5  : {
-    'gen_capacity': 0.5,
-    'gen_cost': 1.25
-    }
+        'gen_cost': 25,
+        'req': 25,
+        'count': 1
+        }
+    
 }
+
+gen_cost =  torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev)
+gen_cap =  torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev)
+req_amt =  torch.tensor([i['req'] for i in agent_config.values()]).to(dev)
+
+ag_count = torch.tensor([i['count'] for i in agent_config.values()]).to(dev)
 
 # environment parameters
 env_config = {
-    'n_agents' : 5,
-    'time_steps': 20,
-    'periods': np.array([1/12, 2/12, 3/12]),
+    'n_agents' : sum(ag_count),
+    'count' : ag_count,
+    'time_steps': 25,
+    'periods': np.array([1, 2]),
 
-    'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
-    'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
-    'gen_impact': 0.02,
+    'gen_capacity': np.repeat(gen_cap, ag_count),
+    'gen_cost' : np.repeat(gen_cost, ag_count),
+    'gen_impact': 0.25,
 
-    'requirement': torch.tensor([5, 5, 5, 5, 5]).to(dev),
-    'penalty': 2.5,
+    'requirement': np.repeat(req_amt, ag_count),
+    'penalty': 50,
     'penalty_type': 'diff',
 
-    'price_start': 2.5,
-    'friction': 0.1,
-    'sigma': 0.25,
+    'price_start': 50,
+    'friction': 2,
+    'sigma': 3,
     
-    'decay': 1,
+    'decay': 0,
     
-    'zero_sum': True
+    'zero_sum': False
 }
 
-# run = wandb.init(
-#     project='offset credit rl',
-#     # entity='offset-credits',
-#     # name = 'base',
-#     # Track hyperparameters and run metadata
-#     config=config,
-# )
 
 # set seeds
 
@@ -107,91 +113,108 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
                             dev = dev, zero_sum = env_config['zero_sum'])
 
 obj = nash_dqn.nash_dqn(env,
-                        n_agents = env_config['n_agents'],
+                        n_agents = env_config['n_agents'], ag_count = env_config['count'],
                         gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
-                        lr = config['learning_rate'],
+                        lr = config['learning_rate'], trade_coef = 10000, trade_soft = 0.25,
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
                         name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
                         dev = dev)
 
 
-obj.train(n_iter = 25000, 
-          batch_size = 1024, 
+obj.train(n_iter = 20000, 
+          batch_size = 512, 
           n_plot = 5000,
           update_type = 'random')
 
 
 
-#%% SINGLE NETWORK TEST
+#%%
+
+
+obj.plot_nice()
+
+
+#%% Big one
+
 config={
         'random_seed': 2024,
-        'learning_rate': 0.006,
+        'learning_rate': 0.003,
         'gamma':1,
-        'beta': 0.2,
-        'alpha': 0,
+        'beta': 0,
+        'alpha': 0.0,
         'tau':0.05,
         'sched_step_size': 25,
         'n_nodes': 150,
-        'n_layers': 5,
+        'n_layers': 9,
     }
 
 # agent setup
 agent_config = {
     1 : {
-        'gen_capacity': 1,
-        'gen_cost': 2.5
+        'gen_capacity': 3,
+        'gen_cost': 150,
+        'req': 40,
+        'count': 2
         },
     2 : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
+        'gen_capacity': 2.5,
+        'gen_cost': 125,
+        'req': 30,
+        'count': 1
         },
-    3  : {
-        'gen_capacity': 0.25,
-        'gen_cost': 0.625
+    3 : {
+        'gen_capacity': 2,
+        'gen_cost': 100,
+        'req': 30,
+        'count': 1
         },
-    4  : {
-        'gen_capacity': 0.5,
-        'gen_cost': 1.25
+    
+    4 : {
+        'gen_capacity': 1.5,
+        'gen_cost': 75,
+        'req': 20,
+        'count': 2
         },
+    
     5  : {
-    'gen_capacity': 0.5,
-    'gen_cost': 1.25
-    }
+        'gen_capacity': 1,
+        'gen_cost': 50,
+        'req': 10,
+        'count': 3
+        }
+    
 }
+
+gen_cost =  torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev)
+gen_cap =  torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev)
+req_amt =  torch.tensor([i['req'] for i in agent_config.values()]).to(dev)
+
+ag_count = torch.tensor([i['count'] for i in agent_config.values()]).to(dev)
 
 # environment parameters
 env_config = {
-    'n_agents' : 5,
-    'time_steps': 30,
-    'periods': np.array([1/12, 2/12, 3/12]),
+    'n_agents' : sum(ag_count),
+    'count' : ag_count,
+    'time_steps': 24,
+    'periods': np.array([1, 2, 3, 4]),
 
-    'gen_capacity': torch.tensor([i['gen_capacity'] for i in agent_config.values()]).to(dev),
-    'gen_cost' : torch.tensor([i['gen_cost'] for i in agent_config.values()]).to(dev),
-    'gen_impact': 0.02,
+    'gen_capacity': np.repeat(gen_cap, ag_count),
+    'gen_cost' : np.repeat(gen_cost, ag_count),
+    'gen_impact': 0.25,
 
-    'requirement': torch.tensor([5, 5, 5, 5, 5]).to(dev),
-    'penalty': 2.5,
+    'requirement': np.repeat(req_amt, ag_count),
+    'penalty': 50,
     'penalty_type': 'diff',
 
-    'price_start': 2.5,
-    'friction': 0.1,
-    'sigma': 0.25,
+    'price_start': 50,
+    'friction': 3,
+    'sigma': 3,
     
-    'decay': 1,
+    'decay': 0,
     
-    'zero_sum': True
+    'zero_sum': False
 }
-
-# run = wandb.init(
-#     project='offset credit rl',
-#     # entity='offset-credits',
-#     # name = 'base',
-#     # Track hyperparameters and run metadata
-#     config=config,
-# )
-
-# set seeds
 
 torch.manual_seed(config['random_seed'])
 np.random.seed(config['random_seed'])
@@ -207,149 +230,25 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
                             penalty = env_config['penalty_type'], decay = env_config['decay'], 
                             dev = dev, zero_sum = env_config['zero_sum'])
 
-obj = single_net_nash_dqn.single_net_nash_dqn(env,
-                        n_agents = env_config['n_agents'],
+obj = nash_dqn.nash_dqn(env,
+                        n_agents = env_config['n_agents'], ag_count = env_config['count'],
                         gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
-                        lr = config['learning_rate'],
+                        lr = config['learning_rate'], trade_coef = 5000, trade_soft = 0.25,
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
                         name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
                         dev = dev)
 
 
-obj.train(n_iter = 25000, 
-          batch_size = 1024, 
+obj.train(n_iter = 20000, 
+          batch_size = 512, 
           n_plot = 5000,
           update_type = 'random')
 
 
+
 #%%
 
-# =============================================================================
-# for i in range(4):
-#     
-#     iters = np.array([10000, 5000, 5000, 5000])
-# 
-#     obj.train(n_iter= iters[i], 
-#               batch_size=2048, 
-#               n_plot=iters[i],
-#               update_type = 'random')
-# 
-#     obj.reset(env = env)
-# 
-# =============================================================================
-#%%
 
-# =============================================================================
-# env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.5, 
-#                             kappa = 1, 
-#                             eta = 0.05, 
-#                             xi = gen_capacity, c = cost,  
-#                             R=5, pen=2.5, 
-#                             n_agents=n_agents,
-#                             N = 26,
-#                             penalty='diff',
-#                             dev=dev)
-# 
-#  
-# =============================================================================
-# # =============================================================================
-# 
-# for kappas in [1.5, 1, 0.5, 0.25]:
-# 
-#     print("\n***************************************")
-#     print("kappa=" + str(kappas))
-#     
-#     scale = 1 #(100/N)
-# 
-#     env = offset_env.offset_env(T=1/12, S0=2.5, sigma=0.25, 
-#                                 kappa = kappas, 
-#                                 eta = 0.05, 
-#                                 xi = gen_capacity, c = cost,  
-#                                 R=5, pen=2.5, 
-#                                 n_agents=n_agents,
-#                                 N = 26,
-#                                 penalty='diff',
-#                                 dev=dev)
-#     
-#     obj.reset(env)    
-#     
-#     obj = nash_dqn.nash_dqn(env,
-#                             n_agents=n_agents,
-#                             gamma = config['gamma'], 
-#                             lr = config['learning_rate'],
-#                             tau = config['tau'],
-#                             sched_step_size=config['sched_step_size'],
-#                             name="test", n_nodes=config['n_nodes'], n_layers=config['n_layers'],
-#                             dev=dev)
-#     
-#     obj.train(n_iter=1000, 
-#               batch_size=512, 
-#               n_plot=1000)
-# 
-#     # log performance
-#    
-# dill.dump(obj, open('trained_kappa' + '.pkl', "wb"))
-# =============================================================================
+obj.plot_nice()
 
- 
-#%%    
-# # try some transfer learning -- learn with various values of N
-# # starting from the optimal from the previous value of N
-# for N in [10, 25, 50, 100]:
-
-#     print("\n***************************************")
-#     print("N=" + str(N))
-    
-#     wandb.config.update({'N': N}, allow_val_change=True)
-#     wandb.config.update({'global_epochs': config['epoch_scale'] * N}, allow_val_change=True)
-#     scale = 1 #(100/N)
-
-#     env = offset_env.offset_env(T=config['T'], S0=config['S0'], sigma=config['sigma'], 
-#                                 kappa = config['kappa'], 
-#                                 eta = config['eta'], 
-#                                 xi=config['xi']*scale, c=scale*config['c'],  
-#                                 R=config['R'], pen=config['pen'], 
-#                                 N = N,
-#                                 penalty='diff')
-    
-#     ddpg.reset(env)    
-    
-#     ddpg.train(n_iter = config['epoch_scale'] * N, 
-#                n_plot = config['n_plots'], 
-#                batch_size = config['batch_size'], 
-#                n_iter_Q=config['Q_epochs'], n_iter_pi=config['pi_epochs'])
-
-#     # log performance 
-#     eval_fig, performance = ddpg.run_strategy(nsims=1000)
-#     trade_fig, gen_fig = ddpg.plot_policy()
-
-#     eval_buf = io.BytesIO()
-#     trade_buf = io.BytesIO()
-#     gen_buf = io.BytesIO()
-    
-#     eval_fig.savefig(eval_buf, format='png', bbox_inches='tight')
-#     trade_fig.savefig(trade_buf, format='png', bbox_inches='tight')
-#     gen_fig.savefig(gen_buf, format='png', bbox_inches='tight')
-
-#     eval_buf.seek(0)
-#     trade_buf.seek(0)
-#     gen_buf.seek(0)
-
-#     wandb.log({'strategy_evaluation': wandb.Image(Image.open(eval_buf)),
-#                'trading_strategy': wandb.Image(Image.open(trade_buf)),
-#                'generation_strategy': wandb.Image(Image.open(gen_buf)),
-#                **performance})
-
-    
-#     dill.dump(ddpg, open('trained_' + str(N) + '.pkl', "wb"))
-#     run.log_model(path='./'+ 'trained_' + str(N) + '.pkl', name=f'chkpt_{N}')
-
-# wandb.finish()
-    
-
-# from datetime import datetime
-# with open('trained_100.pkl', 'rb') as in_strm:
-#     ddpg_loaded = dill.load(in_strm)
-#     ddpg_loaded.run_strategy(1_000, name= datetime.now().strftime("%H_%M_%S"))
-#     ddpg_loaded.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
