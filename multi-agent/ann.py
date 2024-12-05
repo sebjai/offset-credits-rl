@@ -8,6 +8,9 @@ Created on Thu Jan 18 17:29:21 2024
 import torch
 import torch.nn as nn
 
+import pdb
+
+
 class ann(nn.Module):
 
     def __init__(self, n_in, n_out, nNodes, nLayers, 
@@ -22,6 +25,18 @@ class ann(nn.Module):
             [nn.Linear(nNodes, nNodes) for i in range(nLayers-1)])
 
         self.prop_h_to_out = nn.Linear(nNodes, n_out)
+        
+# =============================================================================
+#         pdb.set_trace()
+#         
+#         nn.init.uniform_(self.prop_h_to_out.weight)
+#         
+#         #nn.init.kaiming_uniform_(self.prop_h_to_out.weight)
+#         # torch.nn.init.kaiming_uniform_()
+#         # custom bias init
+#         self.prop_h_to_out.bias.data.fill_(0.5)
+# =============================================================================
+        
         
         if activation == 'silu':
             self.g = nn.SiLU()
@@ -45,10 +60,14 @@ class ann(nn.Module):
 
         # hidden layer to output layer
         y = self.prop_h_to_out(h)
-
+        
         if self.out_activation is not None:
+            
             for i in range(y.shape[-1]):
-                y[...,i] = self.out_activation[i](y[...,i])
+                if i % 2 == 0:
+                    y[...,i] = self.out_activation[0](y[...,i])
+                else:
+                    y[...,i] = self.out_activation[1](y[...,i])
             
 
         return y

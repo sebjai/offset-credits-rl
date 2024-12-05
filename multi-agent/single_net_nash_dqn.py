@@ -1,18 +1,15 @@
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jun  9 10:39:56 2022
+Created on Fri Oct 11 10:43:02 2024
 
-@author: sebja
+@author: liamwelsh
 """
-
 from offset_env import offset_env as Environment
 
 import numpy as np
-from scipy import stats
 import matplotlib.pyplot as plt
-#from matplotlib import mcolors
-import matplotlib.patches as mpatches
-from matplotlib.ticker import FormatStrFormatter
+from matplotlib import colors
 
 import torch
 import torch.optim as optim
@@ -32,12 +29,12 @@ import pdb
 from datetime import datetime
 import wandb
 
-class nash_dqn():
+class single_net_nash_dqn():
 
     def __init__(self, 
                  env: Environment,  
-                 n_agents=2, ag_count = torch.tensor([1,1]),
-                 gamma=0.9999, beta = 100, alpha = 0, trade_coef = 0, trade_soft = 0.5,
+                 n_agents=2,
+                 gamma=0.9999, beta = 100, alpha = 0, 
                  n_nodes=36, n_layers=3, 
                  lr=0.001, tau=0.005, sched_step_size = 20,
                  name="", dev=torch.device("cpu")):
@@ -54,14 +51,6 @@ class nash_dqn():
         self.sched_step_size = sched_step_size
         self.lr = lr
         self.tau = tau
-        self.trade_coef = trade_coef
-        self.trade_soft = trade_soft
-        
-        
-        self.ag_count = ag_count
-        
-        
-        self.alpha = alpha
         
         self.__initialize_NNs__()
         
@@ -74,6 +63,8 @@ class nash_dqn():
         self.epsilon = []
         
         
+        self.alpha = alpha
+        
         self.VA_loss = []
         
     def reset(self, env):
@@ -82,13 +73,20 @@ class nash_dqn():
         self.env = env
         self.lr = self.lr
         
+        self.V_main['net'].env = env
+        self.mu['net'].env = env
+        self.V_target['net'].env = env
+        
+        for k in self.V_main['optimizer'].param_groups:
+                k['lr'] = self.lr
+            
+        for k in self.mu['optimizer'].param_groups:
+            k['lr'] = self.lr
         
         for g in range(self.n_agents):
             self.P[g]['net'].env = env
             self.psi[g]['net'].env = env
-            self.V_main[g]['net'].env = env
-            self.mu[g]['net'].env = env
-            self.V_target[g]['net'].env = env
+            
             
             for k in self.P[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
@@ -96,11 +94,7 @@ class nash_dqn():
             for k in self.psi[g]['optimizer'].param_groups:
                 k['lr'] = self.lr
             
-            for k in self.V_main[g]['optimizer'].param_groups:
-                k['lr'] = self.lr
             
-            for k in self.mu[g]['optimizer'].param_groups:
-                k['lr'] = self.lr
             
         
     def __initialize_NNs__(self):
@@ -139,61 +133,29 @@ class nash_dqn():
         
         self.psi = []
         
-        self.V_main = []
+        self.V_main = (create_net(n_in = (2 + self.n_agents), n_out = self.n_agents, n_nodes=32, n_layers=3))
         
-        self.mu = []
+        if self.env.zero_sum:
+            
+            self.mu = (create_net(n_in = (2 + self.n_agents), n_out = 2*self.n_agents - 1, n_nodes=32, n_layers=3,
+                             out_activation=[lambda x : (torch.sigmoid(x)),
+                                             lambda x : self.env.nu_max / 2 * torch.tanh(x)]))
+        else:
+            
+            self.mu = (create_net(n_in = (2 + self.n_agents), n_out = 2*self.n_agents - 1, n_nodes=32, n_layers=3,
+                             out_activation=[lambda x : self.env.nu_max / 2 * torch.tanh(x),
+                                             lambda x : (torch.sigmoid(x))]))
         
-        self.V_target = []
+        self.V_target = (copy.copy(self.V_main))
         
-# =============================================================================
-#         for k in range(self.n_agents):
-#             self.V_main.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3))
-#             
-#             # try binary output activation instead of a probability.... might make graphs ugly but lets see
-#             self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
-#                                  out_activation=[lambda x : self.env.nu_max / 2 * torch.tanh(x),
-#                                                  lambda x : (torch.sigmoid(x))]))
-#             
-#             self.V_target.append(copy.copy(self.V_main[k]))
-#             
-#             self.psi.append(create_net(n_in=(2 + self.n_agents), n_out= (2 * (self.n_agents - 1)), n_nodes=32, n_layers=3))
-#             
-#             self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
-#             
-#         
-# =============================================================================
-
-        for k in range(self.ag_count.size()[0]):
-            
-            self.V_main.append(create_net(n_in = (2 + self.n_agents), n_out = 1, n_nodes=32, n_layers=3))
-            
-            # try binary output activation instead of a probability.... might make graphs ugly but lets see
-            self.mu.append(create_net(n_in = (2 + self.n_agents), n_out = 2, n_nodes=32, n_layers=3,
-                                 out_activation=[lambda x : self.env.nu_max / 2 * torch.tanh(x),
-                                                 lambda x : (torch.sigmoid(x))]))
-            
-            self.V_target.append(copy.copy(self.V_main[k]))
+        for k in range(self.n_agents):
             
             self.psi.append(create_net(n_in=(2 + self.n_agents), n_out= (2 * (self.n_agents - 1)), n_nodes=32, n_layers=3))
             
             self.P.append(create_posdef_net(n_in=(2 + self.n_agents), n_agents=self.n_agents, n_nodes=32, n_layers=3))
-            
-            
-            if self.ag_count[k] > 1:
-                
-                for j in range(self.ag_count[k] - 1):
-                    #copy the most recent NN if the agent count is greater than 1
-                    self.V_main.append(copy.copy(self.V_main[-1]))
-                    
-                    self.mu.append(copy.copy(self.mu[-1]))
-                    
-                    self.V_target.append(copy.copy(self.V_target[k]))
-                    
-                    self.psi.append(copy.copy(self.psi[-1]))
-                    
-                    self.P.append(copy.copy(self.P[-1]))
-                    
-               
+
+        
+        
     def __get_optim_sched__(self, net):
         
         optimizer = optim.AdamW(net.parameters(),
@@ -238,9 +200,25 @@ class nash_dqn():
         
         MU = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
             
-        for k in range(self.n_agents):
+        if self.env.zero_sum:
+            #set the 2n - 1 elements
+            MU[...,0:-1] = self.mu['net'](Y)
+            #sum up the rates
+            sums = -1 * torch.sum(MU[...,1::2], 1)
+            #set last agent rate to negative sum
+            MU[..., -1] = sums
+            
+            #need to alternate the order to match remainder of code
+            MU_temp = torch.zeros([batch_size, 2 * self.n_agents]).to(self.dev)
+            
+            MU_temp[...,0::2]  = MU[...,1::2]
+            MU_temp[...,1::2]  = MU[...,0::2]
+            
+            MU = MU_temp
                 
-            MU[...,(2*k):((2*k)+2)] = self.mu[k]['net'](Y)
+        else:
+                
+            MU = self.mu['net'](Y)
                 
         return MU
             
@@ -248,9 +226,7 @@ class nash_dqn():
         
         Val = torch.zeros([batch_size, self.n_agents]).to(self.dev)
         
-        for k in range(self.n_agents):
-            
-            Val[...,k:(k+1)] = self.V_main[k]['net'](Y)
+        Val = self.V_main['net'](Y)
             
         return Val
             
@@ -258,9 +234,7 @@ class nash_dqn():
         
         targ = torch.zeros([batch_size, self.n_agents]).to(self.dev)
         
-        for k in range(self.n_agents):
-            
-            targ[...,k:(k+1)] = self.V_target[k]['net'](Y)
+        targ = self.V_target['net'](Y)
             
         return targ
             
@@ -309,12 +283,13 @@ class nash_dqn():
         
     def zero_grad(self):
         
+        self.mu['optimizer'].zero_grad()
+        self.V_main['optimizer'].zero_grad()  
+        
         for k in range(self.n_agents):
             self.P[k]['optimizer'].zero_grad()
             self.psi[k]['optimizer'].zero_grad()
             
-            self.mu[k]['optimizer'].zero_grad()
-            self.V_main[k]['optimizer'].zero_grad()        
         
     def step_optim(self, net):
         net['optimizer'].step()
@@ -357,12 +332,10 @@ class nash_dqn():
     def update_nets(self, update):
         
         if update =='V':
-            for k in range(self.n_agents):
-                self.step_optim(self.V_main[k])
+            self.step_optim(self.V_main)
             
         elif update == 'mu':
-            for k in range(self.n_agents):
-                self.step_optim(self.mu[k])
+            self.step_optim(self.mu)
             
         elif update == 'A':
             for k in range(self.n_agents):
@@ -371,45 +344,18 @@ class nash_dqn():
                 
         elif update =='all':
             
-            #self.step_optim(self.V_main)
-            #self.step_optim(self.mu)
-# =============================================================================
-#             
-#             for k in range(self.n_agents):
-#                 
-#                 self.step_optim(self.mu[k])
-#                 self.step_optim(self.V_main[k])
-#                 self.step_optim(self.P[k])
-#                 self.step_optim(self.psi[k])
-#                 
-# =============================================================================
-                
-            ii = 0
+            self.step_optim(self.V_main)
+            self.step_optim(self.mu)
             
-            for k in range(self.ag_count.size()[0]):
-                
-            
-                self.step_optim(self.mu[ii])
-                self.step_optim(self.V_main[ii])
-                self.step_optim(self.P[ii])
-                self.step_optim(self.psi[ii])
-                
-                if self.ag_count[k] > 1:
-                    
-                    for l in range(self.ag_count[k] - 1):
-                        
-                        self.mu[ii + l+1] = copy.copy(self.mu[ii])
-                        self.V_main[ii + l+1] = copy.copy(self.V_main[ii])
-                        self.P[ii + l+1] = copy.copy(self.P[ii])
-                        self.psi[ii + l+1] = copy.copy(self.psi[ii])
-                
-                ii += self.ag_count[k]
+            for k in range(self.n_agents):
+                self.step_optim(self.P[k])
+                self.step_optim(self.psi[k])
                 
     def restrict_trade(self, mu):
         
-        avg =  torch.mean( self.trade_coef * (torch.sum(mu[...,::2], 1) ** 2) )
+        sums = torch.sum(mu[...,::2], 1)
                 
-        return avg
+        return sums
     
     def zero_trade(self, mu):
         
@@ -478,14 +424,6 @@ class nash_dqn():
                 loss += torch.mean( (V[:,k] + A[k] - r[:,k]  \
                                      - not_done * self.gamma * (Vp[:,k].detach()) )**2 )  \
                                            + self.beta * torch.mean ( torch.abs(torch.sum(psi[k],1)) )
-            
-            trade_loss = self.trade_coef * self.restrict_trade(mu)
-            
-            mag = loss / (2 * trade_loss)
-            pdb.set_trace()
-            self.trade_coef = (1 - self.trade_soft) * self.trade_coef + self.trade_soft * mag
-            
-            loss += trade_loss
                 
             self.zero_grad()
             
@@ -498,25 +436,9 @@ class nash_dqn():
             Y = copy.copy(Yp.detach())
             
             # soft update main >> target
-# =============================================================================
-#             
-#             for k in range(self.n_agents):
-#                 self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
-#                 
-# =============================================================================
-            ii = 0
-            for k in range(self.ag_count.size()[0]):
-                self.soft_update(self.V_main[ii]['net'], self.V_target[ii]['net'])
-                
-                if self.ag_count[k] > 1:
-                    
-                    for l in range(self.ag_count[k] - 1):
-                        self.V_main[ii + l+1] = copy.copy(self.V_main[ii])
-                
-                
-                ii += k
-                
-                
+            
+            for k in range(self.n_agents):
+                self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
             
     
     def update_random_time(self,n_iter=1, batch_size=256, epsilon=0.01, update='V', gen = True, it = 1):
@@ -540,10 +462,11 @@ class nash_dqn():
             
             #MU[...,(2*self.n_agents - 1)] = -1 * torch.sum(MU[...,0:2*(self.n_agents - 1):2], 1)
             
-        
+
         Yp, r = self.env.step(Y, MU, flag = 1, epsilon = epsilon, testing = False, gen=gen, it = it)
             
         mu, mu_p, V, Vp, P, P_p, psi, psi_p = self.get_value_advantage_mu(Y, Yp, batch_size)
+            
             
         # ADD IN REPLAY BUFFER AND SAMPLING FROM IT
             
@@ -566,31 +489,17 @@ class nash_dqn():
         done = 1.0 * (torch.abs(Yp[:,0] - self.env.T[-1]) <= 1e-6)
         
         loss = 0
-        trade_loss = 0
         
         for k in range(self.n_agents):
             #pdb.set_trace()
             loss += torch.mean( (V[:,k] + A[k] - r[:,k]  
                                 - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2  \
                                       + self.beta *  torch.sum(torch.abs(psi[k]), 1) )
-                
-        #only need to use one of the mu's in list        
-        trade_loss += self.restrict_trade(mu[0])
-        
-        #pdb.set_trace()
-        
-        loss_full = loss + trade_loss
-        
-        
-        mag = loss / (2 * trade_loss)
-        
-        self.trade_coef = ((1 - self.trade_soft) * self.trade_coef + self.trade_soft * mag).detach()
-        
         self.zero_grad()
 
-        loss_full.backward()
+        loss.backward()
             
-        self.VA_loss.append(loss_full.item())
+        self.VA_loss.append(loss.item())
         
         self.update_nets(update)
             
@@ -598,30 +507,8 @@ class nash_dqn():
         Y = copy.copy(Yp.detach())
             
         # soft update main >> target
-        # =============================================================================
-        #             
-        #             for k in range(self.n_agents):
-        #                 self.soft_update(self.V_main[k]['net'], self.V_target[k]['net'])
-        #                 
-        # =============================================================================
-        
-        ii = 0
-        for k in range(self.ag_count.size()[0]):
-            self.soft_update(self.V_main[ii]['net'], self.V_target[ii]['net'])
-                        
-            if self.ag_count[k] > 1:
-                            
-                for l in range(self.ag_count[k] - 1):
-                    
-                    #pdb.set_trace()
-                    
-                    self.V_main[ii + l+1] = copy.copy(self.V_main[ii])
-                    
-                        
-            ii += self.ag_count[k]
+        self.soft_update(self.V_main['net'], self.V_target['net'])
             
-    
-    
     def train(self, n_iter=1_000, 
               batch_size=256, 
               n_plot=100,
@@ -670,9 +557,6 @@ class nash_dqn():
                 self.loss_plots()
                 self.run_strategy(1000, name= datetime.now().strftime("%H_%M_%S"), gen = gen_on)
                 
-        self.loss_plots()
-        self.run_strategy(1000, name= datetime.now().strftime("%H_%M_%S"), gen = gen_on)
-                
                 #if self.n_agents == 1:
                 #    self.plot_policy(name=datetime.now().strftime("%H_%M_%S"))
                 
@@ -718,7 +602,7 @@ class nash_dqn():
         
         fig = plt.figure(figsize=(8,4))
         plt.subplot(1,1,1)
-        plot(self.VA_loss[50:], 'Loss', show_band=False)
+        plot(self.VA_loss, 'Loss', show_band=False)
         
         
         plt.tight_layout()
@@ -743,6 +627,8 @@ class nash_dqn():
         
         for k in range(N * self.env.T.size):
             
+            
+            
             Y = self.__stack_state__(self.env.t[k]* ones ,S[:,k], X[:,:,k])
 
             # normalize : Y (tSX)
@@ -756,6 +642,7 @@ class nash_dqn():
                 
                 #a[...,(2*self.n_agents - 1), k] = -1 * torch.sum(a[...,0:2*(self.n_agents - 1):2, k], 1)
              
+
             # step in environment
             
             #pdb.set_trace()
@@ -789,7 +676,7 @@ class nash_dqn():
             plt.subplot(2, 3, plt_i)
             plt.fill_between(t, qtl[0,:], qtl[2,:], alpha=0.5, color = col)
             plt.plot(t, qtl[1,:], color=col, linewidth=1)
-            #plt.plot(t, x[1,:], color=col, linewidth=1.5)
+            plt.plot(t, x[1,:], color=col, linewidth=1.5)
             
             #plt.plot(t, x[:n_paths, :].T, linewidth=1)
             
@@ -800,9 +687,7 @@ class nash_dqn():
         plot(self.env.t, (S), 1, r"$S_t$" )
         
         
-        #colors = ['b','r','g','y','m','c', 'orange', 'skyblue', 'brown']
-        colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown','tab:pink','tab:olive','tab:cyan', 'tab:grey']
-
+        colors = ['b','r','g','y','m','c']
         
         for ag in range(self.n_agents):
             
@@ -825,11 +710,10 @@ class nash_dqn():
             
             if self.env.penalty == 'diff':
                 naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
-                pnl_ag = pnl_sub - naive_pen.numpy()
-                #pnl_ag = pnl_sub
             else:
-                pnl_ag = pnl_sub
+                naive_pen = 0
                 
+            pnl_ag = pnl_sub - naive_pen.numpy()
             
             qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
             
@@ -841,56 +725,15 @@ class nash_dqn():
             
         
         plt.tight_layout()
+            
+        
+        
         plt.show()   
         
-        
-        plt.figure(figsize=(12 , 2 * self.n_agents))
-
-        def plot_indiv(t, x, plt_i, title , clr = 'b' ):
-            '''
-            format
-                 nu, p, x
-            ag 1
-            ag 2
-            '''
-            qtl= np.quantile(x, [0.05, 0.5, 0.95], axis=0)
-            plt.subplot(self.n_agents.item(), 3, plt_i)
-
-            plt.fill_between(t, qtl[0,:], qtl[2,:], alpha=0.5, color = clr)
-            plt.plot(t, qtl[1,:], color=clr, linewidth=1)
-            #plt.plot(t, x[1,:], color=clr, linewidth=1.5)
-            
-            # n_paths = 3
-            #plt.plot(t, x[:n_paths, :].T, linewidth=1)
-            
-            plt.title(title)
-
-        
-        for ag in range(self.n_agents):
-            # inventory
-            plot_indiv(self.env.t, (X[:,ag,:]), (3 + 3*ag), fr"$X_t$", clr = colors[ag])
-                        
-            # trade and prob
-            plot_indiv(self.env.t[:-1], a[:,:,(2*ag)], (1 + 3*ag), r"$\nu_t$", clr = colors[ag])
-            plot_indiv(self.env.t[:-1], a[:,:,(2*ag+1)], (2 + 3*ag), fr"$p_t$", clr = colors[ag])
-
-        plt.figlegend(
-            handles=[mpatches.Patch(color=colors[i], label=f'Agent {i+1}') for i in range(self.n_agents)], 
-            loc='lower center',
-            fancybox=True, shadow = True,
-            ncol=self.n_agents
-            )
-        
-        
-        plt.tight_layout()
-        plt.show()
-        
+        t = 1.0* self.env.t
         
         # return t, S, X, a, r
         return plt.gcf() #, performance
-    
-    
-    
     
     
     
@@ -901,13 +744,10 @@ class nash_dqn():
         if N is None:
             N = self.env.N
         
-        S = torch.zeros((10_000, N * self.env.T.size + 1)).float().to(self.dev)
-        X = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
-        a = torch.zeros((10_000, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
-        r = torch.zeros((10_000, self.n_agents, N * self.env.T.size)).float().to(self.dev)
-        X_nu = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
-        X_gen = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
-        
+        S = torch.zeros((nsims, N * self.env.T.size + 1)).float().to(self.dev)
+        X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
+        r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
         
         S[:,0] = self.env.S0
         X[:,:,0] = 0
@@ -922,31 +762,22 @@ class nash_dqn():
             # get policy
             
             a[:,:,k] = self.get_actions(Y, nsims)
-            
-            if self.env.zero_sum:
-                
-                a[:,:,k] = self.zero_trade(a[:,:,k])
 
             # step in environment
             
-            Y_p, r[:,:,k], X_gen_t, X_nu_t = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, sim = True)
+            #pdb.set_trace()
+            
+            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen)
+            
+           # pdb.set_trace()
             
             # update subsequent state and inventory
             S[:, k+1] = Y_p[:,1]
             X[:,:, k+1] = Y_p[:,2:]
             
-            # OCs traded, OCs generated for each agent at each step
-            
-            X_nu[:,:,k+1] = X_nu_t
-            X_gen[:,:,k+1] = X_gen_t
-            
-            
-            
         S = S.detach().cpu().numpy()
         X  = X.detach().cpu().numpy()
-        X_nu  = X_nu.detach().cpu().numpy()
-        X_gen  = X_gen.detach().cpu().numpy()
-        
+
         a = a.detach().cpu().numpy()
         
         a = a.transpose(0,2,1)
@@ -962,7 +793,7 @@ class nash_dqn():
         plt.plot(self.env.t, qtl[1,:], color='b', linewidth=1.5)
         for el in (self.env.T):
             plt.axvline(x=el, color = 'k', linestyle='dashed')
-        plt.title(r'OC Price')
+        plt.title(r'OC Credit Price')
         plt.xlabel(r't')
         plt.ylabel(r'$S_t$')
         
@@ -983,10 +814,6 @@ class nash_dqn():
 
                 plt.fill_between(t, qtl[0,:], qtl[2,:], alpha=0.5, color = col[ag], label='_nolegend_')
                 plt.plot(t, qtl[1,:], color = col[ag], linewidth=1.5)
-                
-            if leg:
-                 plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'],bbox_to_anchor=(1, 1))
-            
             
             for el in (self.env.T):
                 plt.axvline(x=el, color = 'k', linestyle='dashed')
@@ -997,6 +824,8 @@ class nash_dqn():
             plt.xlabel(xlab)
             plt.ylabel(ylab)
             
+            if leg:
+                plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'],bbox_to_anchor=(1, 1))
             
             
             plt.savefig(str(path), format="pdf", bbox_inches="tight")
@@ -1008,7 +837,7 @@ class nash_dqn():
             
             plt.figure()
             
-            shift = 0.000
+            shift = 0.002
             
             for ag in range(self.n_agents):
                 
@@ -1020,7 +849,8 @@ class nash_dqn():
                 plt.fill_between(t, qtl[0,:] + ag * shift, qtl[2,:] + ag * shift, alpha=0.5, color = col[ag])
                 plt.plot(t, qtl[1,:] + ag * shift, color=col[ag], linewidth=1.5)
             
-            
+            for el in (self.env.T):
+                plt.axvline(x=el, color = 'k', linestyle='dashed')
                 
                 
             plt.title(title)
@@ -1029,15 +859,12 @@ class nash_dqn():
             
             
             if leg:
-                plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4'])
-                
-            for el in (self.env.T):
-                plt.axvline(x=el, color = 'k', linestyle='dashed')
+                plt.legend(['Agent 1', 'Agent 2', 'Agent 3', 'Agent 4', 'Agent 5'])
             
             plt.savefig(str(path), format="pdf", bbox_inches="tight")
             plt.show()
             
-        colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown','tab:pink','tab:olive','tab:cyan']
+        colors = ['b','r','darkgreen','darkorange','fuchsia','cyan']
         
         #pdb.set_trace()
         plot(self.env.t, X, "Agent Inventories", r"$X_t$", r"t", "inv.pdf", colors, True)
@@ -1046,66 +873,10 @@ class nash_dqn():
         plot_action(self.env.t[:-1], a, 1, "Agent Generation Probabilities", r"$p_t$", r"t", "prob.pdf", colors, False)
         
     
-        
+
         PnL = np.sum(r,axis=2)
-            
-            
-        fig, ax = plt.subplots(self.n_agents.item(), 3, figsize=(15, 15))
-        
-            
-        for ag in range(self.n_agents):
-            
-            clr = colors[ag]
-            
-            
-            qtl_nu = np.quantile(a[:,:,(2*ag)], [0.05, 0.5, 0.95], axis=0)
-            qtl_p = np.quantile(a[:,:,(2*ag + 1)], [0.05, 0.5, 0.95], axis=0)
-            qtl_inv = np.quantile(X[:,ag,:], [0.05, 0.5, 0.95], axis=0)
-                
-            # trade rate    
-            ax[ag,0].plot(self.env.t[:-1], qtl_nu[1,:], color=clr, linewidth=1)
-            ax[ag,0].fill_between(self.env.t[:-1], qtl_nu[0,:], qtl_nu[2,:], alpha=0.5, color = clr)
-            ax[ag,0].yaxis.set_major_formatter(FormatStrFormatter('%.2f'))
-
-            for el in (self.env.T):
-                ax[ag,0].axvline(x=el, color = 'k', linestyle='dashed')
-            #prob
-            ax[ag,1].plot(self.env.t[:-1], qtl_p[1,:], color=clr, linewidth=1)
-            ax[ag,1].fill_between(self.env.t[:-1], qtl_p[0,:], qtl_p[2,:], alpha=0.5, color = clr)
-            for el in (self.env.T):
-                ax[ag,1].axvline(x=el, color = 'k', linestyle='dashed')
-            ax[ag,1].yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-
-            #inventory
-            ax[ag,2].plot(self.env.t, qtl_inv[1,:], color=clr, linewidth=1)
-            ax[ag,2].fill_between(self.env.t, qtl_inv[0,:], qtl_inv[2,:], alpha=0.5, color = clr)
-            for el in (self.env.T):
-                ax[ag,2].axvline(x=el, color = 'k', linestyle='dashed')
-
-            
-            
-            ax[ag,0].set(ylabel=r'Agent {}'.format(ag+1))
-            
-            
-        ax[0,0].set_title(r'$\nu_t$')
-        ax[0,1].set_title(r'$p_t$')
-        ax[0,2].set_title(r'$X_t$')
-            
-           
-            
-        fig.align_ylabels(ax[:, 0])
-        ax[-1, 1].set(xlabel=r't')
-        
-        plt.tight_layout()
-        plt.savefig('solo_agents.pdf', format="pdf", bbox_inches="tight")
-        plt.show()
-        
-        fig, ax = plt.subplots(1, self.n_agents.item(), figsize=(16, 8))
-
         
         for ag in range(self.n_agents):
-            
-            clr = colors[ag]
             
             pnl_sub = PnL[:,ag]
             
@@ -1113,43 +884,16 @@ class nash_dqn():
                 naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
             else:
                 naive_pen = 0
-                            
+                
             pnl_ag = pnl_sub - naive_pen.numpy()
             
-            qtl_pnl = np.quantile(pnl_ag,[0.001, 0.5, 0.999])
+            qtl = np.quantile(pnl_ag,[0.005, 0.5, 0.995])
+            
             cvar = self.CVaR(pnl_ag, confidence_level = 0.95)
-            
-            kde_pnl = stats.gaussian_kde(pnl_ag)
-            xx = np.linspace(min(pnl_ag), max(pnl_ag), 100)
-            
-            #PnL
-            ax[ag].hist(pnl_ag, bins=np.linspace(min(pnl_ag), max(pnl_ag), 20), density=True, color = clr, alpha = 0.5)
-            ax[ag].plot(xx, kde_pnl(xx), color = clr)
-            ax[ag].axvline(x=cvar, color = 'dimgrey', linestyle='dashed')
-            
-            
-            ax[ag].set(xlabel=r'Agent {}'.format(ag+1))
-            
-# =============================================================================
-#             ax[0,3].set_title(r'PnL')
-# =============================================================================
-            
+            #         
             print("\n")
-            print("Agent" , (ag+1) ,"True Mean:" , qtl_pnl[1], ", True Left Tail:", cvar )
+            print("Agent" , (ag+1) ,"Mean:" , qtl[1], ", Left Tail:", cvar)
             
-            X_nu_ag = np.sum(X_nu[:,ag,:], axis = 1)
-            X_gen_ag = np.sum(X_gen[:,ag,:], axis = 1)
-            
-            print("Agent" , (ag+1) ,"Total Trade:" , np.mean(X_nu_ag), ", Total Gen:", np.mean(X_gen_ag) )
-            
-            
-           
-        fig.suptitle('Agent PnL Histograms', fontsize = 16)
         
-        plt.tight_layout()
-        plt.savefig('pnl_hist.pdf', format="pdf", bbox_inches="tight")
-        plt.show()
+        t = 1.0* self.env.t
         
-
-
-    
