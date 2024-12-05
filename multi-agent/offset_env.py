@@ -9,7 +9,6 @@ import numpy as np
 import tqdm
 import pdb
 import torch
-import math
 
 
 class offset_env():
@@ -123,16 +122,8 @@ class offset_env():
       
     def step(self, y, a, flag, epsilon, testing = False, gen = True, it = 1, sim = False):
         
-        _DECAY_IN = 10_000
         batch_size = y.shape[0]
         
-        kappa = self.smooth_transfer(decay=1, iter=iter,
-                                     upper=100*self.kappa, lower=0,
-                                     decay_in=_DECAY_IN, type='linear')
-        c = self.smooth_transfer(decay=0, iter=iter,
-                                 lower=0, upper=self.c,
-                                 decay_in=_DECAY_IN, type='linear')
-
         # G = 1 is a generate a credit by investing in a project
         # random action (probability from the NN)
         
@@ -156,6 +147,7 @@ class offset_env():
         period = torch.tensor([min(self.T, key=lambda i:i if (i-x)>0 else float('inf')) for x in y[:,0].detach().numpy()]).to(self.dev)
         
         eff_vol = self.sigma * torch.sqrt((self.dt * (period - yp[:,0]).clip(min = 0) / (period - y[:,0])))
+        
         
         yp[:,1] = (y[:,1]- self.eta * torch.sum(self.xi * G,axis=-1)) *(period - yp[:,0]).clip(min = 0)/(period-y[:,0]) \
             + self.dt/(period-y[:,0]) * self.pen \
@@ -208,13 +200,10 @@ class offset_env():
                 ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
                 
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                    #   trading cost: high to low
-                      + (0.5 * kappa * nu**2 * self.dt) \
-                    #   cost of generation: low to high
-                          + c * G \
-                                                        
+                      + (0.5 * self.kappa * nu**2 * self.dt) \
+                          + self.c * G \
                               + torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T)  \
-                                  + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end) )
+                                  + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end))
                     
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
                
@@ -226,11 +215,8 @@ class offset_env():
                 remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
 
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
-                    #   trading cost: high to low
-                      + (0.5 * kappa * nu**2 * self.dt)  \
-                    #   cost of generation: low to high
-                          + c * G \
-                                                     
+                      + (0.5 * self.kappa * nu**2 * self.dt)  \
+                          + self.c * G \
                               + self.diff_cost(y[:,2:], yp[:,2:], remain) \
                                   + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end)  ) 
                                      # + torch.einsum('j,i->ij', self.pen*self.R, ind_T))
