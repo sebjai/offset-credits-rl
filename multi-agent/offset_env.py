@@ -52,13 +52,15 @@ class offset_env():
         self.dt = self.t[1]-self.t[0]  # time steps
         self.inv_vol = self.sigma * np.sqrt(0.5*self.T[0] )
         
+        #pdb.set_trace()
+        
         self.penalty = penalty
         
         # at terminal time, we don't want any excess...
         self.excess = lambda x0 : (self.pen * torch.maximum ( torch.subtract(x0, self.R), torch.tensor(0)) ) 
         
-        self.diff_cost = lambda x0, x1, rem : torch.einsum('ij,i->ij',  ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
-                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) ) , rem)
+        self.diff_cost = lambda x0, x1 : ( self.pen * (  torch.maximum(self.R - x1, torch.tensor(0))\
+                                            - torch.maximum(self.R - x0, torch.tensor(0)) ) ) 
             
         self.terminal_cost = lambda x0 : self.pen * torch.maximum ( torch.subtract(self.R, x0), torch.tensor(0))
         
@@ -96,7 +98,7 @@ class offset_env():
         else:
             t0 = torch.tensor(np.random.choice(self.t[:-1], size=batch_size, replace=True)).float().to(self.dev)
             for k in range(self.T.size):
-                idx_i = (torch.rand(batch_size).to(self.dev) < epsilon / self.T.size ).int()
+                idx_i = (torch.rand(batch_size).to(self.dev) < 0.2 / self.T.size ).int()
                 t0[idx_i] = (self.T[k] - self.dt)
         
         #always start with zero inventory
@@ -183,12 +185,13 @@ class offset_env():
                 
                 ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
                 
-                remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
+                #remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
     
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                           + self.c * G \
-                              + self.diff_cost(y[:,2:], yp[:,2:], remain) )
-                                 # + torch.einsum('j,i->ij', self.pen*self.R, ind_T) )
+                              #+ torch.einsum('ij,i->ij', self.terminal_cost(yp[:,2:]), ind_T))
+                              + self.diff_cost(y[:,2:], yp[:,2:]) )
+                              #    + torch.einsum('ij,i->ij', self.pen * torch.maximum ( torch.subtract(self.R, yp[:,2:]), torch.tensor(0)), ind_T) )
                     
                 
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 
@@ -212,14 +215,14 @@ class offset_env():
                 
                 ind_T = (torch.abs(yp[:,0]-period)<1e-6).int()
                 
-                remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
+                #remain = self.T.size - torch.tensor([((torch.tensor(self.T) == i)).nonzero()[0] for i in period])
 
                 r = -( y[:,1].reshape(-1,1) * nu *self.dt \
                       + (0.5 * self.kappa * nu**2 * self.dt)  \
                           + self.c * G \
-                              + self.diff_cost(y[:,2:], yp[:,2:], remain) \
+                              + self.diff_cost(y[:,2:], yp[:,2:]) \
                                   + ex_pen * torch.einsum('ij,i->ij', self.excess(yp[:,2:]), end)  ) 
-                                     # + torch.einsum('j,i->ij', self.pen*self.R, ind_T))
+                                     # + torch.einsum('ij,i->ij', self.pen * torch.maximum ( torch.subtract(self.R, yp[:,2:]), torch.tensor(0)), ind_T) )
                     
                 
                 yp[:,2:] = yp[:,2:] - torch.einsum('ij,i->ij', torch.min( yp[:,2:] , self.R ), ind_T) 

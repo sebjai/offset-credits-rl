@@ -574,7 +574,7 @@ class nash_dqn():
                                 - ( 1 - done) * self.gamma * (Vp[:,k].detach()) )**2  \
                                       + self.beta *  torch.sum(torch.abs(psi[k]), 1) )
                 
-        #only need to use one of the mu's in list        
+        #only need to use one of the mu's in list  
         trade_loss += self.restrict_trade(mu[0])
         
         #pdb.set_trace()
@@ -582,7 +582,7 @@ class nash_dqn():
         loss_full = loss + trade_loss
         
         
-        mag = loss / (2 * trade_loss)
+        mag = loss / (2 * trade_loss + 1)
         
         self.trade_coef = ((1 - self.trade_soft) * self.trade_coef + self.trade_soft * mag).detach()
         
@@ -735,6 +735,8 @@ class nash_dqn():
         X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
         a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
         r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
+        X_nu = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        X_gen = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
         
         S[:,0] = self.env.S0
         X[:,:,0] = 0
@@ -747,7 +749,6 @@ class nash_dqn():
 
             # normalize : Y (tSX)
             # get policy
-            
             a[:,:,k] = self.get_actions(Y, nsims)
             
             if self.env.zero_sum:
@@ -760,14 +761,21 @@ class nash_dqn():
             
             #pdb.set_trace()
             
-            Y_p, r[:,:,k] = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, it = 1)
+            Y_p, r[:,:,k], X_gen_t, X_nu_t = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, sim = True)
             
             # update subsequent state and inventory
             S[:, k+1] = Y_p[:,1]
             X[:,:, k+1] = Y_p[:,2:]
             
+            # OCs traded, OCs generated for each agent at each step
+            
+            X_nu[:,:,k+1] = X_nu_t
+            X_gen[:,:,k+1] = X_gen_t
+            
         S = S.detach().cpu().numpy()
         X  = X.detach().cpu().numpy()
+        X_nu  = X_nu.detach().cpu().numpy()
+        X_gen  = X_gen.detach().cpu().numpy()
 
         a = a.detach().cpu().numpy()
         
@@ -824,7 +832,19 @@ class nash_dqn():
             pnl_sub = PnL[:,ag]
             
             if self.env.penalty == 'diff':
-                naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
+                #initial term
+                naive_pen = torch.zeros(nsims)
+                
+                for l in range(self.env.T.size):
+                    
+                    if l == 0:
+                        naive_pen += self.env.pen *self.env.R[ag] 
+                    else:
+                        step = (l) * self.env.N
+                        #need to re-calculate the inv prior to compliance
+                        X_comp = X[:,ag,(step-1)] + X_gen[:,ag,(step)] + X_nu[:,ag,(step)]
+                        naive_pen += self.env.pen * torch.maximum(self.env.R[ag] - X_comp, torch.tensor(0))
+                    
                 pnl_ag = pnl_sub - naive_pen.numpy()
                 #pnl_ag = pnl_sub
             else:
@@ -901,12 +921,12 @@ class nash_dqn():
         if N is None:
             N = self.env.N
         
-        S = torch.zeros((10_000, N * self.env.T.size + 1)).float().to(self.dev)
-        X = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
-        a = torch.zeros((10_000, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
-        r = torch.zeros((10_000, self.n_agents, N * self.env.T.size)).float().to(self.dev)
-        X_nu = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
-        X_gen = torch.zeros((10_000, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        S = torch.zeros((nsims, N * self.env.T.size + 1)).float().to(self.dev)
+        X = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        a = torch.zeros((nsims, (2 * self.n_agents), N * self.env.T.size)).float().to(self.dev)
+        r = torch.zeros((nsims, self.n_agents, N * self.env.T.size)).float().to(self.dev)
+        X_nu = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
+        X_gen = torch.zeros((nsims, self.n_agents, N * self.env.T.size + 1)).float().to(self.dev)
         
         
         S[:,0] = self.env.S0
@@ -928,6 +948,8 @@ class nash_dqn():
                 a[:,:,k] = self.zero_trade(a[:,:,k])
 
             # step in environment
+            
+            pdb.set_trace()
             
             Y_p, r[:,:,k], X_gen_t, X_nu_t = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, sim = True)
             
@@ -952,6 +974,8 @@ class nash_dqn():
         a = a.transpose(0,2,1)
         
         r = r.detach().cpu().numpy()
+        
+        
 
         plt.figure()
         
@@ -1110,11 +1134,23 @@ class nash_dqn():
             pnl_sub = PnL[:,ag]
             
             if self.env.penalty == 'diff':
-                naive_pen = self.env.pen * self.env.R[ag] * self.env.T.size
+                #initial term
+                naive_pen = torch.zeros(nsims)
+                
+                for l in range(self.env.T.size):
+                    if l == 0:
+                        naive_pen += self.env.pen *self.env.R[ag] 
+                    else:
+                        step = (l) * self.env.N
+                        #need to re-calculate the inv prior to compliance
+                        #as the inventory has already dropped
+                        X_comp = X[:,ag,(step-1)] + X_gen[:,ag,(step)] + X_nu[:,ag,(step)]
+                        naive_pen += self.env.pen * torch.maximum(self.env.R[ag] - X_comp, torch.tensor(0))
+                    
+                pnl_ag = pnl_sub - naive_pen.numpy()
+                #pnl_ag = pnl_sub
             else:
-                naive_pen = 0
-                            
-            pnl_ag = pnl_sub - naive_pen.numpy()
+                pnl_ag = pnl_sub
             
             qtl_pnl = np.quantile(pnl_ag,[0.001, 0.5, 0.999])
             cvar = self.CVaR(pnl_ag, confidence_level = 0.95)
