@@ -75,12 +75,12 @@ ag_count = torch.tensor([i['count'] for i in agent_config.values()]).to(dev)
 env_config = {
     'n_agents' : sum(ag_count),
     'count' : ag_count,
-    'time_steps': 25,
+    'time_steps': 24,
     'periods': np.array([1, 2]),
 
     'gen_capacity': np.repeat(gen_cap, ag_count),
     'gen_cost' : np.repeat(gen_cost, ag_count),
-    'gen_impact': 0.25,
+    'gen_impact': 0.5,
 
     'requirement': np.repeat(req_amt, ag_count),
     'penalty': 50,
@@ -115,7 +115,7 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
 obj = nash_dqn.nash_dqn(env,
                         n_agents = env_config['n_agents'], ag_count = env_config['count'],
                         gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
-                        lr = config['learning_rate'], trade_coef = 10000, trade_soft = 0.25,
+                        lr = config['learning_rate'], trade_coef = 50, trade_soft = 0.25,
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
                         name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
@@ -139,7 +139,7 @@ obj.plot_nice()
 
 config={
         'random_seed': 2024,
-        'learning_rate': 0.003,
+        'learning_rate': 0.001,
         'gamma':1,
         'beta': 0,
         'alpha': 0.0,
@@ -197,7 +197,7 @@ env_config = {
     'n_agents' : sum(ag_count),
     'count' : ag_count,
     'time_steps': 24,
-    'periods': np.array([1, 2, 3, 4]),
+    'periods': np.array([1, 2]),
 
     'gen_capacity': np.repeat(gen_cap, ag_count),
     'gen_cost' : np.repeat(gen_cost, ag_count),
@@ -208,7 +208,7 @@ env_config = {
     'penalty_type': 'diff',
 
     'price_start': 50,
-    'friction': 3,
+    'friction': 5,
     'sigma': 3,
     
     'decay': 0,
@@ -233,14 +233,14 @@ env = offset_env.offset_env(T=env_config['periods'], S0=env_config['price_start'
 obj = nash_dqn.nash_dqn(env,
                         n_agents = env_config['n_agents'], ag_count = env_config['count'],
                         gamma = config['gamma'], alpha=config['alpha'], beta=config['beta'],
-                        lr = config['learning_rate'], trade_coef = 5000, trade_soft = 0.25,
+                        lr = config['learning_rate'], trade_coef = 1000, trade_soft = 0.25,
                         tau = config['tau'],
                         sched_step_size=config['sched_step_size'],
                         name = "test", n_nodes = config['n_nodes'], n_layers = config['n_layers'],
                         dev = dev)
 
 
-obj.train(n_iter = 20000, 
+obj.train(n_iter = 40000, 
           batch_size = 512, 
           n_plot = 5000,
           update_type = 'random')
