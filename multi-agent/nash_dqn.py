@@ -979,6 +979,7 @@ class nash_dqn():
 
         plt.figure()
         
+        # plot - OC price
         plt.plot()
         qtl= np.quantile(S, [0.01, 0.5, 0.99], axis=0)
 
@@ -1063,10 +1064,11 @@ class nash_dqn():
             
         colors = ['tab:blue','tab:orange','tab:green','tab:red','tab:purple','tab:brown','tab:pink','tab:olive','tab:cyan']
         
-        #pdb.set_trace()
+        # sampe plot - all agents - inventory
         plot(self.env.t, X, "Agent Inventories", r"$X_t$", r"t", "inv.pdf", colors, True)
-        
+        # sampe plot - all agents - trade rate
         plot_action(self.env.t[:-1], a, 0, "Agent Trade Rates", r"$\nu_t$", r"t", "trade.pdf", colors, False)
+        # sampe plot - all agents - generation
         plot_action(self.env.t[:-1], a, 1, "Agent Generation Probabilities", r"$p_t$", r"t", "prob.pdf", colors, False)
         
     
@@ -1077,6 +1079,7 @@ class nash_dqn():
         fig, ax = plt.subplots(self.n_agents.item(), 3, figsize=(15, 15))
         
             
+        # solo plots - agent wise - trade rate, probability and inventory
         for ag in range(self.n_agents):
             
             clr = colors[ag]
@@ -1099,6 +1102,7 @@ class nash_dqn():
             for el in (self.env.T):
                 ax[ag,1].axvline(x=el, color = 'k', linestyle='dashed')
             ax[ag,1].yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
+            ax[ag,1].set_ylim([0, 1])
 
             #inventory
             ax[ag,2].plot(self.env.t, qtl_inv[1,:], color=clr, linewidth=1)
@@ -1127,6 +1131,7 @@ class nash_dqn():
         fig, ax = plt.subplots(1, self.n_agents.item(), figsize=(16, 8))
 
         
+        # solo plots - agent wise - pnl
         for ag in range(self.n_agents):
             
             clr = colors[ag]
