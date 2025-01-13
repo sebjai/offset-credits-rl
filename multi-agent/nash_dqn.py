@@ -949,7 +949,7 @@ class nash_dqn():
 
             # step in environment
             
-            pdb.set_trace()
+            # pdb.set_trace()
             
             Y_p, r[:,:,k], X_gen_t, X_nu_t = self.env.step(Y, a[:,:,k], flag = 0, epsilon = 0, testing = True, gen = gen, sim = True)
             
@@ -1102,7 +1102,15 @@ class nash_dqn():
             for el in (self.env.T):
                 ax[ag,1].axvline(x=el, color = 'k', linestyle='dashed')
             ax[ag,1].yaxis.set_major_formatter(FormatStrFormatter('%.3f'))
-            ax[ag,1].set_ylim([0, 1])
+
+            threshold = 0.01
+            buffer = threshold/ 2
+
+            if np.max(a[:,:,(2*ag + 1)]) - np.min(a[:,:,(2*ag + 1)]):
+                ax[ag,1].set_ylim([np.min(a[:,:,(2*ag + 1)]) - buffer,
+                                   np.max(a[:,:,(2*ag + 1)]) + buffer])
+            else:
+                ax[ag,1].set_ylim([0, 1])
 
             #inventory
             ax[ag,2].plot(self.env.t, qtl_inv[1,:], color=clr, linewidth=1)
